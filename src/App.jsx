@@ -9,6 +9,7 @@ import TaskList from './components/TaskList'
 import HouseholdList from './components/HouseholdList'
 import HouseholdDetail from './components/HouseholdDetail'
 import ProjectDetail from './components/ProjectDetail'
+import ResidentProfile from './components/ResidentProfile'
 import ActivityFeed from './components/ActivityFeed'
 import ProfilePage from './components/ProfilePage'
 import UserDirectory from './components/UserDirectory'
@@ -19,12 +20,14 @@ import LoginPage from './components/LoginPage'
 function AppMain() {
   const { allUsers } = useAuth()
   const { lists } = useTasks()
-  const { dbError } = useHouseholds()
+  const { projects, dbError } = useHouseholds()
 
   const [activeView,        setActiveView]        = useState('dashboard')
   const [activeListId,      setActiveListId]      = useState(null)
   const [activeHouseholdId, setActiveHouseholdId] = useState(null)
   const [activeProjectId,   setActiveProjectId]   = useState(null)
+  const [activeResidentId,  setActiveResidentId]  = useState(null)
+  const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
   const [showAddList,       setShowAddList]       = useState(false)
 
   // Default quick-list selection once lists load
@@ -39,6 +42,9 @@ function AppMain() {
     if (params.listId      !== undefined) setActiveListId(params.listId)
     if (params.householdId !== undefined) setActiveHouseholdId(params.householdId)
     if (params.projectId   !== undefined) setActiveProjectId(params.projectId)
+    if (params.residentId  !== undefined) setActiveResidentId(params.residentId)
+    if (params.tab         !== undefined) setActiveHouseholdTab(params.tab)
+    else if (view === 'household')        setActiveHouseholdTab('details')
   }
 
   function renderMain() {
@@ -53,8 +59,10 @@ function AppMain() {
         return (
           <HouseholdDetail
             householdId={activeHouseholdId}
+            initialTab={activeHouseholdTab}
             onBack={() => navigate('household-list')}
-            onSelectProject={id => navigate('project', { projectId: id })}
+            onSelectProject={id => navigate('project', { projectId: id, householdId: activeHouseholdId })}
+            onSelectResident={id => navigate('resident', { residentId: id, householdId: activeHouseholdId })}
           />
         )
       case 'household-list':
@@ -63,12 +71,28 @@ function AppMain() {
             onSelectHousehold={id => navigate('household', { householdId: id })}
           />
         )
-      case 'project':
+      case 'project': {
+        const project = projects.find(p => p.id === activeProjectId)
         return (
           <ProjectDetail
             projectId={activeProjectId}
             allUsers={allUsers}
-            onBack={() => navigate('household', { householdId: activeHouseholdId })}
+            onBack={() => {
+              if (project?.residentId) {
+                navigate('resident', { residentId: project.residentId, householdId: activeHouseholdId })
+              } else {
+                navigate('household', { householdId: activeHouseholdId, tab: 'projects' })
+              }
+            }}
+          />
+        )
+      }
+      case 'resident':
+        return (
+          <ResidentProfile
+            residentId={activeResidentId}
+            onBack={() => navigate('household', { householdId: activeHouseholdId, tab: 'residents' })}
+            onSelectProject={id => navigate('project', { projectId: id, householdId: activeHouseholdId })}
           />
         )
       case 'activity':
@@ -95,6 +119,7 @@ function AppMain() {
         activeListId={activeListId}
         activeHouseholdId={activeHouseholdId}
         activeProjectId={activeProjectId}
+        activeResidentId={activeResidentId}
         navigate={navigate}
         onAddList={() => setShowAddList(true)}
       />

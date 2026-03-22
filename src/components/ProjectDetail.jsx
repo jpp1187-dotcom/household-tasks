@@ -18,13 +18,14 @@ function timeAgo(dateStr) {
 
 export default function ProjectDetail({ projectId, onBack, allUsers }) {
   const { canEdit } = useAuth()
-  const { projects, households, activity, updateProject } = useHouseholds()
+  const { projects, households, residents, activity, updateProject } = useHouseholds()
   const { tasks } = useTasks()
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState('all')
 
   const project = projects.find(p => p.id === projectId)
   const household = project ? households.find(h => h.id === project.householdId) : null
+  const resident = project?.residentId ? residents.find(r => r.id === project.residentId) : null
 
   let pTasks = tasks.filter(t => t.projectId === projectId)
   if (filter === 'todo') pTasks = pTasks.filter(t => t.status !== 'done')
@@ -53,14 +54,21 @@ export default function ProjectDetail({ projectId, onBack, allUsers }) {
     <div className="flex-1 flex overflow-hidden">
       {/* Main content */}
       <div className="flex-1 overflow-y-auto px-8 py-8">
-        {/* Back */}
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 text-xs text-sage-400 hover:text-sage-600 mb-4"
-        >
-          <ArrowLeft size={14} />
-          {household?.name ?? 'Back'}
-        </button>
+        {/* Back / breadcrumb */}
+        <div className="flex items-center gap-1 text-xs text-sage-400 mb-4">
+          <button onClick={onBack} className="hover:text-sage-600 flex items-center gap-1">
+            <ArrowLeft size={14} />
+            {household?.name ?? 'Back'}
+          </button>
+          {resident && (
+            <>
+              <span className="text-sage-300">›</span>
+              <span className="text-sage-500 font-medium">
+                {resident.preferredName || `${resident.legalFirst} ${resident.legalLast}`}
+              </span>
+            </>
+          )}
+        </div>
 
         {/* Header */}
         <div className="flex items-start justify-between mb-6">

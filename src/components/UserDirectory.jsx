@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
+import { X, UserPlus, Mail } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { supabaseAdmin } from '../lib/supabaseAdmin'
 import { useAuth } from '../contexts/AuthContext'
 
 const ALL_ROLES = ['admin', 'member', 'cleaner', 'chef', 'travel_agent']
@@ -12,7 +14,6 @@ function InitialsAvatar({ name, size = 'md' }) {
     .slice(0, 2)
     .toUpperCase()
   const sizeClass = size === 'lg' ? 'w-14 h-14 text-lg' : 'w-10 h-10 text-sm'
-  // Simple deterministic color from name
   const hue = (name ?? '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
   return (
     <div
@@ -76,12 +77,90 @@ function RoleEditor({ user, onSaved }) {
   )
 }
 
+function InviteModal({ onClose }) {
+  const [email, setEmail] = useState('')
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState(null) // { text, ok }
+
+  async function handleInvite(e) {
+    e.preventDefault()
+    if (!email.trim()) return
+    if (!supabaseAdmin) {
+      setResult({ text: 'Admin client not configured. Add VITE_SUPABASE_SERVICE_KEY to .env.local', ok: false })
+      return
+    }
+    setSending(true)
+    setResult(null)
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email.trim())
+    setSending(false)
+    if (error) setResult({ text: 'Error: ' + error.message, ok: false })
+    else setResult({ text: `Invite sent to ${email}!`, ok: true })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-display text-lg text-sage-800">Invite team member</h2>
+          <button onClick={onClose} className="text-sage-300 hover:text-sage-600 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleInvite} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-sage-500 mb-1">Email address</label>
+            <div className="flex items-center gap-2 border border-sage-200 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-sage-300">
+              <Mail size={14} className="text-sage-400 shrink-0" />
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="colleague@example.com"
+                className="flex-1 text-sm text-sage-800 focus:outline-none"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          {result && (
+            <p className={`text-xs rounded-lg px-3 py-2 border
+              ${result.ok
+                ? 'bg-sage-50 border-sage-200 text-sage-700'
+                : 'bg-red-50 border-red-200 text-red-700'}`}
+            >
+              {result.text}
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={sending || !email.trim()}
+              className="flex-1 px-4 py-2 text-sm font-semibold bg-sage-600 text-white rounded-xl hover:bg-sage-700 disabled:opacity-40 transition-colors"
+            >
+              {sending ? 'Sending…' : 'Send invite'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-sage-500 hover:text-sage-700 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function UserDirectory() {
   const { currentUser, allUsers, isAdmin } = useAuth()
   const [editingUserId, setEditingUserId] = useState(null)
   const [localUsers, setLocalUsers] = useState(allUsers)
+  const [showInvite, setShowInvite] = useState(false)
 
-  // Keep in sync if allUsers changes (e.g. after a refresh)
   React.useEffect(() => { setLocalUsers(allUsers) }, [allUsers])
 
   function handleRolesSaved(userId, newRoles) {
@@ -96,11 +175,22 @@ export default function UserDirectory() {
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-8 max-w-4xl">
-      <div className="mb-8">
-        <h2 className="font-display text-2xl text-sage-800">Team</h2>
-        <p className="text-xs text-sage-400 mt-1">
-          {localUsers.length} member{localUsers.length !== 1 ? 's' : ''}
-        </p>
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <h2 className="font-display text-2xl text-sage-800">Team</h2>
+          <p className="text-xs text-sage-400 mt-1">
+            {localUsers.length} member{localUsers.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        {isAdmin() && (
+          <button
+            onClick={() => setShowInvite(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
+          >
+            <UserPlus size={15} />
+            Invite user
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -114,7 +204,6 @@ export default function UserDirectory() {
               className={`bg-white rounded-xl border shadow-sm p-5
                 ${isMe ? 'border-sage-300' : 'border-sage-100'}`}
             >
-              {/* Avatar + name */}
               <div className="flex items-center gap-3 mb-3">
                 {u.avatar_url ? (
                   <img
@@ -138,7 +227,6 @@ export default function UserDirectory() {
                 </div>
               </div>
 
-              {/* Role badges */}
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {(u.roles ?? [u.role]).map(r => (
                   <span
@@ -151,12 +239,10 @@ export default function UserDirectory() {
                 ))}
               </div>
 
-              {/* Bio */}
               {u.bio && (
                 <p className="text-xs text-sage-500 mb-3 line-clamp-2">{u.bio}</p>
               )}
 
-              {/* Admin: edit role button */}
               {isAdmin() && (
                 <button
                   onClick={() => setEditingUserId(editing ? null : u.id)}
@@ -166,17 +252,15 @@ export default function UserDirectory() {
                 </button>
               )}
 
-              {/* Inline role editor */}
               {editing && (
-                <RoleEditor
-                  user={u}
-                  onSaved={handleRolesSaved}
-                />
+                <RoleEditor user={u} onSaved={handleRolesSaved} />
               )}
             </div>
           )
         })}
       </div>
+
+      {showInvite && <InviteModal onClose={() => setShowInvite(false)} />}
     </div>
   )
 }

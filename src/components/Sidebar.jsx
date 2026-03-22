@@ -1,16 +1,16 @@
 import React, { useState } from 'react'
 import {
   LayoutDashboard, CheckSquare, List, Home, Activity, Users,
-  Plus, ChevronDown, ChevronRight, LogOut,
+  Plus, ChevronDown, ChevronRight, LogOut, UserCircle,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 
-export default function Sidebar({ activeView, activeListId, activeHouseholdId, activeProjectId, navigate, onAddList }) {
+export default function Sidebar({ activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId, navigate, onAddList }) {
   const { currentUser, signOut, isAdmin } = useAuth()
   const { lists, tasks } = useTasks()
-  const { households, projects, addHousehold } = useHouseholds()
+  const { households, projects, residents, addHousehold } = useHouseholds()
 
   const [listsOpen, setListsOpen] = useState(true)
   const [expandedHouseholds, setExpandedHouseholds] = useState(new Set())
@@ -149,9 +149,24 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
                 </button>
               </div>
 
-              {/* Inline project list */}
-              {hExpanded && hProjects.length > 0 && (
+              {/* Sub-links: Residents + Projects */}
+              {hExpanded && (
                 <div className="ml-8 mb-1">
+                  {/* Residents link */}
+                  <button
+                    onClick={() => navigate('household', { householdId: h.id, tab: 'residents' })}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-0.5 transition-colors
+                      ${activeView === 'household' && activeHouseholdId === h.id
+                        ? 'text-sage-600 hover:bg-sage-50'
+                        : 'text-sage-500 hover:bg-sage-50'}`}
+                  >
+                    <UserCircle size={12} className="text-sage-400" />
+                    <span className="truncate">
+                      Residents ({residents.filter(r => r.householdId === h.id).length})
+                    </span>
+                  </button>
+
+                  {/* Project list */}
                   {hProjects.map(p => (
                     <button
                       key={p.id}

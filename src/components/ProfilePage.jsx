@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function ProfilePage() {
-  const { currentUser } = useAuth()
+  const { currentUser, refreshProfile } = useAuth()
   const [form, setForm] = useState({
     name:   currentUser?.name   ?? '',
     bio:    currentUser?.bio    ?? '',
@@ -32,7 +32,10 @@ export default function ProfilePage() {
       .eq('id', currentUser.id)
     setSaving(false)
     if (error) flash('Error: ' + error.message, false)
-    else flash('Profile saved!')
+    else {
+      await refreshProfile()
+      flash('Profile saved!')
+    }
   }
 
   async function handlePasswordChange() {
@@ -58,8 +61,9 @@ export default function ProfilePage() {
     }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
     await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', currentUser.id)
+    await refreshProfile()
     setUploading(false)
-    flash('Photo updated — refresh to see it everywhere.')
+    flash('Photo updated!')
   }
 
   return (
