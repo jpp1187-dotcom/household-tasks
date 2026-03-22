@@ -86,6 +86,9 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
   const { tasks } = useTasks()
 
   const [tab, setTab] = useState(initialTab)
+
+  // Sync tab when parent navigates to a specific tab (e.g. Sidebar "Residents" link)
+  React.useEffect(() => { setTab(initialTab) }, [initialTab])
   const [showAddProject, setShowAddProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [showAddResident, setShowAddResident] = useState(false)
@@ -98,9 +101,9 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
 
   const [form, setForm] = useState(null)
 
-  // Initialise form once household loads
+  // (Re-)initialise form when household loads or when navigating to a different household
   React.useEffect(() => {
-    if (household && !form) {
+    if (household) {
       setForm({
         name: household.name ?? '',
         address1: household.address1 ?? '',
@@ -116,7 +119,7 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
         description: household.description ?? '',
       })
     }
-  }, [household])
+  }, [householdId, household])
 
   function setField(key, val) {
     setForm(prev => ({ ...prev, [key]: val }))

@@ -1,6 +1,25 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+
+function InitialsAvatar({ name, size = 'lg' }) {
+  const initials = (name ?? '?')
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+  const sizeClass = size === 'lg' ? 'w-20 h-20 text-2xl' : 'w-10 h-10 text-sm'
+  const hue = (name ?? '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  return (
+    <div
+      className={`${sizeClass} rounded-full flex items-center justify-center font-semibold text-white shrink-0 border-2 border-white`}
+      style={{ backgroundColor: `hsl(${hue}, 45%, 48%)` }}
+    >
+      {initials}
+    </div>
+  )
+}
 
 export default function ProfilePage() {
   const { currentUser, refreshProfile } = useAuth()
@@ -13,6 +32,17 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState(null) // { text, ok }
+
+  // Re-sync form fields whenever currentUser updates (e.g. after refreshProfile)
+  useEffect(() => {
+    if (currentUser) {
+      setForm({
+        name:   currentUser.name   ?? '',
+        bio:    currentUser.bio    ?? '',
+        gender: currentUser.gender ?? '',
+      })
+    }
+  }, [currentUser])
 
   function set(key, val) {
     setForm(prev => ({ ...prev, [key]: val }))
@@ -53,17 +83,26 @@ export default function ProfilePage() {
     const path = `${currentUser.id}.${ext}`
     const { error: uploadErr } = await supabase.storage
       .from('avatars')
-      .upload(path, file, { upsert: true })
+      .upload(path, file, { upsert: true, cacheControl: '1' })
     if (uploadErr) {
       flash('Upload error: ' + uploadErr.message, false)
       setUploading(false)
       return
     }
+    // Get public URL and append a cache-busting timestamp to defeat CDN caching
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
-    await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', currentUser.id)
-    await refreshProfile()
+    const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`
+    const { error: updateErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', currentUser.id)
+    if (updateErr) {
+      flash('Saved photo but could not update profile: ' + updateErr.message, false)
+    } else {
+      await refreshProfile()
+      flash('Photo updated!')
+    }
     setUploading(false)
-    flash('Photo updated!')
   }
 
   return (
@@ -79,9 +118,7 @@ export default function ProfilePage() {
             className="w-20 h-20 rounded-full object-cover border-2 border-sage-100"
           />
         ) : (
-          <div className="w-20 h-20 rounded-full bg-sage-100 flex items-center justify-center text-4xl border-2 border-sage-100">
-            {currentUser?.avatar ?? '🧑'}
-          </div>
+          <InitialsAvatar name={currentUser?.name ?? currentUser?.email} />
         )}
         <div>
           <label className="cursor-pointer px-4 py-2 text-sm font-medium bg-sage-100 hover:bg-sage-200 text-sage-700 rounded-lg transition-colors">

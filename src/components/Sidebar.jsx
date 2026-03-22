@@ -7,6 +7,24 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 
+function SidebarAvatar({ name }) {
+  const initials = (name ?? '?')
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+  const hue = (name ?? '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  return (
+    <div
+      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
+      style={{ backgroundColor: `hsl(${hue}, 45%, 48%)` }}
+    >
+      {initials}
+    </div>
+  )
+}
+
 export default function Sidebar({ activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId, navigate, onAddList }) {
   const { currentUser, signOut, isAdmin } = useAuth()
   const { lists, tasks } = useTasks()
@@ -251,7 +269,7 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
             {currentUser?.avatar_url ? (
               <img src={currentUser.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
             ) : (
-              <span className="text-xl shrink-0">{currentUser?.avatar ?? '🧑'}</span>
+              <SidebarAvatar name={currentUser?.name ?? currentUser?.email} />
             )}
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium text-sage-700 leading-tight truncate">
