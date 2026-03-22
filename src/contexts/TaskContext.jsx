@@ -1,23 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { logActivity } from '../lib/logActivity'
+import { useAuth } from './AuthContext'
 
 // ─── Context ──────────────────────────────────────────────────────────────────
-// TaskContext exposes:
-//   tasks, lists  — arrays of live data from Supabase
-//   loading       — true during initial fetch
-//   addTask(task)
-//   updateTask(id, changes)
-//   deleteTask(id)
-//   toggleDone(id)
-//   addList(list)  — returns the created list object
+// Exposes: tasks, lists, loading
+//          addTask, updateTask, deleteTask, toggleDone, addList
 
 const TaskContext = createContext(null)
 
-// Map snake_case DB rows → camelCase app objects
 function mapTask(row) {
   return {
     id: row.id,
     listId: row.list_id,
+    projectId: row.project_id ?? null,
     title: row.title,
     assignedTo: row.assigned_to,
     createdBy: row.created_by,
@@ -35,10 +31,12 @@ function mapList(row) {
     name: row.name,
     icon: row.icon,
     color: row.color,
+    householdId: row.household_id ?? null,
   }
 }
 
 export function TaskProvider({ children }) {
+  const { currentUser } = useAuth()
   const [tasks, setTasks] = useState([])
   const [lists, setLists] = useState([])
   const [loading, setLoading] = useState(true)
@@ -58,7 +56,8 @@ export function TaskProvider({ children }) {
     const { data, error } = await supabase
       .from('tasks')
       .insert({
-        list_id: task.listId,
+        list_id: task.listId ?? null,
+        project_id: task.projectId ?? null,
         title: task.title,
         assigned_to: task.assignedTo ?? null,
         created_by: task.createdBy,
@@ -72,26 +71,36 @@ export function TaskProvider({ children }) {
     if (error) throw error
     const newTask = mapTask(data)
     setTasks(prev => [newTask, ...prev])
+    await logActivity(supabase, currentUser?.id, 'created', 'task', newTask.id, newTask.title)
     return newTask
   }
 
   async function updateTask(id, changes) {
+    const task = tasks.find(t => t.id === id)
     const dbChanges = {}
-    if ('title' in changes)      dbChanges.title       = changes.title
+    if ('title'      in changes) dbChanges.title       = changes.title
     if ('assignedTo' in changes) dbChanges.assigned_to = changes.assignedTo
-    if ('priority' in changes)   dbChanges.priority    = changes.priority
-    if ('status' in changes)     dbChanges.status      = changes.status
-    if ('dueDate' in changes)    dbChanges.due_date    = changes.dueDate
-    if ('notes' in changes)      dbChanges.notes       = changes.notes
+    if ('priority'   in changes) dbChanges.priority    = changes.priority
+    if ('status'     in changes) dbChanges.status      = changes.status
+    if ('dueDate'    in changes) dbChanges.due_date    = changes.dueDate
+    if ('notes'      in changes) dbChanges.notes       = changes.notes
     const { error } = await supabase.from('tasks').update(dbChanges).eq('id', id)
     if (error) throw error
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t))
+
+    let action = 'updated'
+    if ('priority'   in changes) action = `updated priority to ${changes.priority}`
+    if ('assignedTo' in changes) action = 'assigned to'
+    if ('status'     in changes) action = changes.status === 'done' ? 'completed' : `set status to ${changes.status}`
+    await logActivity(supabase, currentUser?.id, action, 'task', id, task?.title)
   }
 
   async function deleteTask(id) {
+    const task = tasks.find(t => t.id === id)
     const { error } = await supabase.from('tasks').delete().eq('id', id)
     if (error) throw error
     setTasks(prev => prev.filter(t => t.id !== id))
+    await logActivity(supabase, currentUser?.id, 'deleted', 'task', id, task?.title)
   }
 
   async function toggleDone(id) {

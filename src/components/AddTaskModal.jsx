@@ -3,7 +3,8 @@ import { X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 
-export default function AddTaskModal({ listId, onClose }) {
+// Accepts either listId (for quick lists) or projectId (for project tasks)
+export default function AddTaskModal({ listId, projectId, onClose }) {
   const { currentUser, allUsers } = useAuth()
   const { addTask } = useTasks()
 
@@ -24,7 +25,8 @@ export default function AddTaskModal({ listId, onClose }) {
     if (!form.title.trim()) return
     addTask({
       ...form,
-      listId,
+      listId: listId ?? null,
+      projectId: projectId ?? null,
       createdBy: currentUser.id,
       dueDate: form.dueDate || null,
     })

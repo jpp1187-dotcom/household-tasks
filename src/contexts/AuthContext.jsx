@@ -2,16 +2,34 @@ import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 // ─── Context ──────────────────────────────────────────────────────────────────
-// AuthContext exposes:
-//   currentUser  — the logged-in user profile (from `profiles` table)
-//   allUsers     — all profiles (for the "Assign to" picker)
-//   loading      — true while resolving the initial session
-//   signIn(email, password) — returns a rejected promise on failure
-//   signOut()
-//   canEdit()    — true if role is admin or member
-//   isAdmin()    — true if role is admin
+// Exposes:
+//   currentUser, allUsers, loading
+//   signIn(email, password), signOut()
+//   canEdit()         — true if roles includes admin or member
+//   isAdmin()         — true if roles includes admin
+//   canEditList(list) — role-based: household lists check specific roles
 
 const AuthContext = createContext(null)
+
+// Normalise a profile row so roles is always an array and role is roles[0]
+function normalizeProfile(p, email = null) {
+  const roles = Array.isArray(p.roles)
+    ? p.roles
+    : [p.role ?? 'member']
+  return {
+    ...p,
+    email: email ?? p.email,
+    roles,
+    role: roles[0] ?? 'member', // backward-compat single-role string
+  }
+}
+
+// Map emoji icon → the role that grants edit access on that list type
+const ROLE_BY_LIST_ICON = {
+  '🛒': 'chef',
+  '✈️': 'travel_agent',
+  '🏠': 'cleaner',
+}
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
@@ -20,17 +38,13 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        loadProfile(session.user)
-      } else {
-        setLoading(false)
-      }
+      if (session?.user) loadProfile(session.user)
+      else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        loadProfile(session.user)
-      } else {
+      if (session?.user) loadProfile(session.user)
+      else {
         setCurrentUser(null)
         setLoading(false)
       }
@@ -47,14 +61,21 @@ export function AuthProvider({ children }) {
       .single()
 
     const user = profile
-      ? { ...profile, email: authUser.email }
-      : { id: authUser.id, email: authUser.email, name: authUser.email.split('@')[0], role: 'member', avatar: '🧑', color: 'bg-sage-500' }
+      ? normalizeProfile(profile, authUser.email)
+      : {
+          id: authUser.id,
+          email: authUser.email,
+          name: authUser.email.split('@')[0],
+          roles: ['member'],
+          role: 'member',
+          avatar: '🧑',
+          color: 'bg-sage-500',
+        }
 
     setCurrentUser(user)
 
-    // Fetch all profiles so other components can build assignee pickers
     const { data: profiles } = await supabase.from('profiles').select('*')
-    setAllUsers(profiles?.map(p => ({ ...p })) ?? [user])
+    setAllUsers(profiles?.map(p => normalizeProfile(p)) ?? [user])
 
     setLoading(false)
   }
@@ -69,15 +90,32 @@ export function AuthProvider({ children }) {
   }
 
   function canEdit() {
-    return currentUser?.role === 'admin' || currentUser?.role === 'member'
+    if (!currentUser) return false
+    return currentUser.roles.includes('admin') || currentUser.roles.includes('member')
   }
 
   function isAdmin() {
-    return currentUser?.role === 'admin'
+    return currentUser?.roles?.includes('admin') ?? false
+  }
+
+  function canEditList(list) {
+    if (!currentUser) return false
+    if (currentUser.roles.includes('admin')) return true
+    // Household-scoped lists: check domain-specific roles
+    if (list?.householdId) {
+      const required = ROLE_BY_LIST_ICON[list.icon]
+      if (required && currentUser.roles.includes(required)) return true
+      // Fall back to generic member check
+    }
+    return canEdit()
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, allUsers, loading, signIn, signOut, canEdit, isAdmin }}>
+    <AuthContext.Provider value={{
+      currentUser, allUsers, loading,
+      signIn, signOut,
+      canEdit, isAdmin, canEditList,
+    }}>
       {children}
     </AuthContext.Provider>
   )

@@ -24,8 +24,12 @@ export default function LoginPage() {
   return (
     <div className="flex h-screen items-center justify-center bg-sage-50">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm px-8 py-10">
-        <h1 className="font-display text-2xl text-sage-800 mb-1">Homebase</h1>
-        <p className="text-xs text-sage-400 mb-8">Your household, organized.</p>
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <img src="/gormy.png" alt="GormBase" className="h-16 w-auto mb-4" />
+          <h1 className="font-display text-2xl text-sage-800">GormBase</h1>
+          <p className="text-xs text-sage-400 mt-0.5">Your household, organized.</p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
