@@ -151,7 +151,7 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
   if (!household) return <div className="p-8 text-sage-400">Household not found.</div>
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-8">
+    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-8 pb-24 md:pb-8">
       {/* Back */}
       <button
         onClick={onBack}
@@ -274,10 +274,11 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
             <p className="text-sm text-sage-500">
               {hResidents.length} resident{hResidents.length !== 1 ? 's' : ''} in this household
             </p>
+            {/* "+ Add Resident" desktop button — hidden on mobile, use FAB instead */}
             {isAdmin() && (
               <button
                 onClick={() => setShowAddResident(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
+                className="hidden md:flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
               >
                 <Plus size={16} />
                 Add Resident
@@ -389,6 +390,17 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
             </div>
           )}
         </div>
+      )}
+
+      {/* Mobile FAB — "+ Add Resident" (residents tab only) */}
+      {tab === 'residents' && isAdmin() && (
+        <button
+          onClick={() => setShowAddResident(true)}
+          className="md:hidden fixed bottom-6 right-6 z-20 w-14 h-14 bg-sage-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-sage-700 active:scale-95 transition-all"
+          aria-label="Add resident"
+        >
+          <Plus size={24} />
+        </button>
       )}
 
       {showAddResident && (

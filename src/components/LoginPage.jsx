@@ -22,8 +22,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-sage-50">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm px-8 py-10">
+    <div className="flex h-screen items-center justify-center bg-sage-50 px-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm px-6 sm:px-8 py-10">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <img src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png" alt="GormBase" className="h-16 w-auto mb-4" />

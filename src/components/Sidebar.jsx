@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import {
   LayoutDashboard, CheckSquare, List, Home, Activity, Users,
-  Plus, ChevronDown, ChevronRight, LogOut, UserCircle,
+  Plus, ChevronDown, ChevronRight, LogOut, UserCircle, X,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
@@ -25,7 +25,10 @@ function SidebarAvatar({ name }) {
   )
 }
 
-export default function Sidebar({ activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId, navigate, onAddList }) {
+export default function Sidebar({
+  activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId,
+  navigate, onAddList, onClose,
+}) {
   const { currentUser, signOut, isAdmin } = useAuth()
   const { lists, tasks } = useTasks()
   const { households, projects, residents, addHousehold } = useHouseholds()
@@ -69,13 +72,27 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
 
   return (
     <aside className="w-64 bg-white border-r border-sage-100 flex flex-col h-full shrink-0">
-      {/* Logo + App name */}
+      {/* Logo + App name + mobile close button */}
       <div className="px-6 pt-7 pb-4 flex items-center gap-2.5">
-        <img src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png" alt="GormBase" className="h-7 w-auto" />
-        <div>
+        <img
+          src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png"
+          alt="GormBase"
+          className="h-7 w-auto"
+        />
+        <div className="flex-1">
           <h1 className="font-display text-xl text-sage-800 leading-tight">GormBase</h1>
           <p className="text-xs text-sage-400 leading-tight">Your household, organized.</p>
         </div>
+        {/* X button — mobile only */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden text-sage-400 hover:text-sage-600 transition-colors -mr-1"
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 px-3 overflow-y-auto pb-2">
@@ -161,7 +178,7 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
                 <button
                   onClick={() => toggleHousehold(h.id)}
                   className="px-2 py-2 text-sage-400 hover:text-sage-600 hover:bg-sage-50 rounded-r-lg transition-colors"
-                  title={hExpanded ? 'Collapse' : 'Expand projects'}
+                  title={hExpanded ? 'Collapse' : 'Expand'}
                 >
                   {hExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
@@ -170,13 +187,9 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
               {/* Sub-links: Residents + Projects */}
               {hExpanded && (
                 <div className="ml-8 mb-1">
-                  {/* Residents link */}
                   <button
                     onClick={() => navigate('household', { householdId: h.id, tab: 'residents' })}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-0.5 transition-colors
-                      ${activeView === 'household' && activeHouseholdId === h.id
-                        ? 'text-sage-600 hover:bg-sage-50'
-                        : 'text-sage-500 hover:bg-sage-50'}`}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-0.5 text-sage-500 hover:bg-sage-50 transition-colors"
                   >
                     <UserCircle size={12} className="text-sage-400" />
                     <span className="truncate">
@@ -184,7 +197,6 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
                     </span>
                   </button>
 
-                  {/* Project list */}
                   {hProjects.map(p => (
                     <button
                       key={p.id}
@@ -231,43 +243,46 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
               <button type="submit" className="flex-1 text-xs py-1 bg-sage-600 text-white rounded-lg font-semibold hover:bg-sage-700">
                 Add
               </button>
-              <button type="button" onClick={() => { setShowAddHousehold(false); setAddHouseholdError('') }} className="px-2 text-xs text-sage-400 hover:text-sage-600">
+              <button
+                type="button"
+                onClick={() => { setShowAddHousehold(false); setAddHouseholdError('') }}
+                className="px-2 text-xs text-sage-400 hover:text-sage-600"
+              >
                 ✕
               </button>
             </div>
           </form>
         )}
 
-        {/* ── Bottom links ─────────────────────────── */}
+        {/* ── More ─────────────────────────────────── */}
         <div className="mt-4">
           <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1">More</p>
-          <button
-            onClick={() => navigate('team')}
-            className={navClass(activeView === 'team')}
-          >
+          <button onClick={() => navigate('team')} className={navClass(activeView === 'team')}>
             <Users size={16} />
             <span>Team</span>
           </button>
-          <button
-            onClick={() => navigate('activity')}
-            className={navClass(activeView === 'activity')}
-          >
+          <button onClick={() => navigate('activity')} className={navClass(activeView === 'activity')}>
             <Activity size={16} />
             <span>Activity</span>
           </button>
         </div>
       </nav>
 
-      {/* Signed-in user — click to go to Profile */}
+      {/* ── Bottom: user profile link ─────────────── */}
       <div className="px-3 pb-5 pt-3 border-t border-sage-100">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Clicking anywhere on the user row navigates to Profile */}
           <button
             onClick={() => navigate('profile')}
             className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg min-w-0 transition-colors
               ${activeView === 'profile' ? 'bg-sage-100' : 'hover:bg-sage-50'}`}
           >
             {currentUser?.avatar_url ? (
-              <img src={currentUser.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+              <img
+                src={currentUser.avatar_url}
+                alt=""
+                className="w-7 h-7 rounded-full object-cover shrink-0"
+              />
             ) : (
               <SidebarAvatar name={currentUser?.name ?? currentUser?.email} />
             )}
@@ -281,7 +296,7 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
           <button
             onClick={signOut}
             title="Sign out"
-            className="text-sage-300 hover:text-sage-600 transition-colors px-1"
+            className="text-sage-300 hover:text-sage-600 transition-colors p-1 shrink-0"
           >
             <LogOut size={15} />
           </button>

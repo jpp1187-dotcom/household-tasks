@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, Filter } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import TaskCard from './TaskCard'
@@ -37,7 +37,7 @@ export default function TaskList({ listId }) {
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 bg-sage-50 z-10 px-8 pt-8 pb-4 border-b border-sage-100">
+      <div className="sticky top-0 bg-sage-50 z-10 px-4 md:px-8 pt-6 md:pt-8 pb-4 border-b border-sage-100">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -56,10 +56,11 @@ export default function TaskList({ listId }) {
             </div>
           </div>
 
+          {/* "+ Add Task" button — desktop only; mobile uses FAB below */}
           {canEdit() && (
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
+              className="hidden md:flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
             >
               <Plus size={16} />
               Add Task
@@ -85,7 +86,7 @@ export default function TaskList({ listId }) {
       </div>
 
       {/* Task cards */}
-      <div className="px-8 py-4 space-y-2 max-w-2xl">
+      <div className="px-4 md:px-8 py-4 space-y-2 max-w-2xl pb-24 md:pb-4">
         {visible.length === 0 ? (
           <div className="text-center py-16 text-sage-300">
             <p className="text-4xl mb-3">✓</p>
@@ -100,6 +101,17 @@ export default function TaskList({ listId }) {
           visible.map(task => <TaskCard key={task.id} task={task} />)
         )}
       </div>
+
+      {/* Mobile FAB — "+ Add Task" */}
+      {canEdit() && (
+        <button
+          onClick={() => setShowModal(true)}
+          className="md:hidden fixed bottom-6 right-6 z-20 w-14 h-14 bg-sage-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-sage-700 active:scale-95 transition-all"
+          aria-label="Add task"
+        >
+          <Plus size={24} />
+        </button>
+      )}
 
       {showModal && (
         <AddTaskModal listId={listId} onClose={() => setShowModal(false)} />
