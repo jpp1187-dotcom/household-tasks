@@ -58,24 +58,38 @@ export function TaskProvider({ children }) {
   }, [])
 
   async function addTask(task) {
+    // Explicitly map every field so nothing gets silently dropped.
+    // project_id is critical — it links the task to a domain/resident project.
+    const insertData = {
+      list_id:     task.listId     ?? null,
+      project_id:  task.projectId  ?? null,
+      title:       task.title,
+      assigned_to: task.assignedTo ?? null,
+      created_by:  task.createdBy  ?? currentUser?.id,
+      priority:    task.priority   ?? 'medium',
+      status:      'todo',
+      due_date:    task.dueDate    ?? null,
+      notes:       task.notes      ?? '',
+      archived:    false,
+    }
+
+    // Diagnostic log — visible in browser console while debugging project_id saves
+    console.log('[addTask] insert →', {
+      project_id:  insertData.project_id,
+      list_id:     insertData.list_id,
+      title:       insertData.title,
+      assigned_to: insertData.assigned_to,
+    })
+
     const { data, error } = await supabase
       .from('tasks')
-      .insert({
-        list_id: task.listId ?? null,
-        project_id: task.projectId ?? null,
-        title: task.title,
-        assigned_to: task.assignedTo ?? null,
-        created_by: task.createdBy,
-        priority: task.priority ?? 'medium',
-        status: 'todo',
-        due_date: task.dueDate ?? null,
-        notes: task.notes ?? '',
-        archived: false,
-      })
+      .insert(insertData)
       .select()
       .single()
+
     if (error) throw error
     const newTask = mapTask(data)
+    console.log('[addTask] saved row →', { id: data.id, project_id: data.project_id })
     setTasks(prev => [newTask, ...prev])
     await logActivity(supabase, currentUser?.id, 'created', 'task', newTask.id, newTask.title)
     // Google Calendar stub — will no-op until configured

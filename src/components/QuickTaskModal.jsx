@@ -4,6 +4,17 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 
+/*
+ * Verification SQL (run in Supabase SQL Editor after creating a test task):
+ *
+ * SELECT t.title, t.project_id, p.project_type, r.legal_name
+ * FROM tasks t
+ * LEFT JOIN projects p ON t.project_id = p.id
+ * LEFT JOIN residents r ON p.resident_id = r.id
+ * ORDER BY t.created_at DESC
+ * LIMIT 5;
+ */
+
 export default function QuickTaskModal({ onClose }) {
   const { currentUser, allUsers } = useAuth()
   const { addTask } = useTasks()
@@ -30,16 +41,17 @@ export default function QuickTaskModal({ onClose }) {
     )
   }, [activeResidents, residentSearch])
 
-  // Projects for selected resident
+  // Projects for currently selected resident
   const residentProjects = selectedResident
     ? projects.filter(p => p.residentId === selectedResident.id && !p.archived && p.status === 'active')
     : []
 
   function selectResident(r) {
-    // Compute projects for r directly (not from state — state hasn't updated yet)
+    // Compute projects using r directly — selectedResident state hasn't updated yet
     const rProjects = projects.filter(p => p.residentId === r.id && !p.archived && p.status === 'active')
     setSelectedResident(r)
     setResidentSearch(r.preferredName || r.legalName)
+    // Auto-select first project so project_id is pre-filled
     setSelectedProjectId(rProjects[0]?.id ?? '')
     setShowResidentList(false)
   }
@@ -54,15 +66,23 @@ export default function QuickTaskModal({ onClose }) {
     e.preventDefault()
     if (!title.trim()) return
     setSaving(true)
+
+    const projectId = selectedProjectId || null
+
+    // Diagnostic: verify project_id before insert
+    console.log('[QuickTaskModal] inserting task with project_id:', projectId,
+      '| resident:', selectedResident?.legalName ?? 'none',
+      '| selectedProjectId state:', selectedProjectId)
+
     try {
       await addTask({
-        title: title.trim(),
-        projectId: selectedProjectId || null,
-        listId: !selectedProjectId ? null : null,
+        title:      title.trim(),
+        projectId,
+        listId:     null,
         assignedTo: assignedTo || null,
-        createdBy: currentUser?.id,
+        createdBy:  currentUser?.id,
         priority,
-        dueDate: dueDate || null,
+        dueDate:    dueDate || null,
       })
       onClose()
     } finally {
@@ -124,16 +144,26 @@ export default function QuickTaskModal({ onClose }) {
             )}
           </div>
 
-          {/* Project type (when resident selected) */}
-          {selectedResident && residentProjects.length > 0 && (
+          {/* Project dropdown — shown when resident is selected */}
+          {selectedResident && (
             <div>
               <label className={labelCls}>Project</label>
-              <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)} className={inputCls}>
-                <option value="">— Personal task —</option>
-                {residentProjects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              {residentProjects.length === 0 ? (
+                <p className="text-xs text-sage-400 py-2">
+                  No active projects for this resident. Task will be saved without a project.
+                </p>
+              ) : (
+                <select
+                  value={selectedProjectId}
+                  onChange={e => setSelectedProjectId(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">— No project (personal task) —</option>
+                  {residentProjects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
 

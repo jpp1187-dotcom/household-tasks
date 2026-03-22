@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Check, AlertCircle, Clock, Calendar } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { useHouseholds } from '../contexts/HouseholdContext'
 
 const PRIORITY_STYLES = {
   high:   'bg-red-50 text-red-600 border-red-200',
@@ -30,16 +30,27 @@ function isDueThisWeek(dueDate) {
   return dueDate >= t && dueDate <= addDays(t, 7)
 }
 
-function TaskRow({ task, context, overdue }) {
-  const { toggleDone } = useTasks()
+function getTaskContext(task) {
+  if (task.project) {
+    const r = task.project.resident
+    if (r) {
+      const name = r.preferred_name || r.legal_name
+      const type = (task.project.project_type ?? '').replace(/_/g, ' ')
+      return `${name} · ${type}`
+    }
+    return task.project.project_type ?? 'Project'
+  }
+  return 'Personal task'
+}
 
+function TaskRow({ task, overdue, onToggle }) {
   return (
     <div className={`flex items-center gap-3 px-4 py-3 bg-white rounded-xl border shadow-sm transition-all
       ${overdue ? 'border-l-4 border-l-red-400 border-r-sage-100 border-t-sage-100 border-b-sage-100' : 'border-sage-100'}`}
     >
       {/* Checkbox */}
       <button
-        onClick={() => toggleDone(task.id)}
+        onClick={() => onToggle(task.id, task.status)}
         className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
           ${task.status === 'done'
             ? 'bg-sage-400 border-sage-400'
@@ -54,11 +65,9 @@ function TaskRow({ task, context, overdue }) {
       </span>
 
       {/* Context badge */}
-      {context && (
-        <span className="hidden sm:block text-xs px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full truncate max-w-32">
-          {context}
-        </span>
-      )}
+      <span className="hidden sm:block text-xs px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full truncate max-w-36">
+        {getTaskContext(task)}
+      </span>
 
       {/* Priority */}
       <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0 ${PRIORITY_STYLES[task.priority]}`}>
@@ -66,17 +75,17 @@ function TaskRow({ task, context, overdue }) {
       </span>
 
       {/* Due date */}
-      {task.dueDate && (
+      {task.due_date && (
         <span className={`text-xs shrink-0 flex items-center gap-1 ${overdue ? 'text-red-500 font-medium' : 'text-sage-400'}`}>
           <Calendar size={11} />
-          {task.dueDate}
+          {task.due_date}
         </span>
       )}
     </div>
   )
 }
 
-function Section({ icon: Icon, label, color, tasks, getContext }) {
+function Section({ icon: Icon, label, color, tasks, onToggle }) {
   if (tasks.length === 0) return null
   return (
     <div className="mb-6">
@@ -87,7 +96,7 @@ function Section({ icon: Icon, label, color, tasks, getContext }) {
       </div>
       <div className="space-y-2">
         {tasks.map(t => (
-          <TaskRow key={t.id} task={t} context={getContext(t)} overdue={label === 'Overdue'} />
+          <TaskRow key={t.id} task={t} overdue={label === 'Overdue'} onToggle={onToggle} />
         ))}
       </div>
     </div>
@@ -96,41 +105,77 @@ function Section({ icon: Icon, label, color, tasks, getContext }) {
 
 export default function MyTasks() {
   const { currentUser } = useAuth()
-  const { tasks } = useTasks()
-  const { projects, residents, households } = useHouseholds()
+  const { updateTask } = useTasks()  // for toggling done (writes back to context + DB)
+
+  const [tasks, setTasks] = useState([])
+  const [doneTasks, setDoneTasks] = useState([])
+  const [loading, setLoading] = useState(true)
   const [showDone, setShowDone] = useState(false)
+  const [loadingDone, setLoadingDone] = useState(false)
 
-  // My tasks: assigned to me OR created by me, not archived
-  const mine = tasks.filter(t =>
-    !t.archived &&
-    (t.assignedTo === currentUser?.id || t.createdBy === currentUser?.id)
-  )
+  const fetchMyTasks = useCallback(async () => {
+    if (!currentUser?.id) return
+    setLoading(true)
 
-  const active = mine.filter(t => t.status !== 'done')
-  const done   = mine.filter(t => t.status === 'done')
+    const { data, error } = await supabase
+      .from('tasks')
+      .select(`
+        id, title, status, priority, due_date, assigned_to, created_by, archived,
+        project:projects(
+          project_type, resident_id,
+          resident:residents(legal_name, preferred_name)
+        )
+      `)
+      .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
+      .eq('archived', false)
+      .neq('status', 'done')
+      .order('due_date', { ascending: true, nullsFirst: false })
 
-  const overdue     = active.filter(t => isOverdue(t.dueDate))
-  const thisWeek    = active.filter(t => isDueThisWeek(t.dueDate))
-  const upcoming    = active.filter(t => !isOverdue(t.dueDate) && !isDueThisWeek(t.dueDate))
-
-  function getContext(task) {
-    if (task.projectId) {
-      const project = projects.find(p => p.id === task.projectId)
-      if (!project) return null
-      if (project.residentId) {
-        const resident = residents.find(r => r.id === project.residentId)
-        return resident ? `${resident.legalName} · ${project.projectType || project.name}` : project.name
-      }
-      const household = households.find(h => h.id === project.householdId)
-      return household ? `${household.name} · ${project.name}` : project.name
+    if (error) {
+      console.error('[MyTasks] fetch error:', error.message)
+    } else {
+      setTasks(data ?? [])
     }
-    if (task.listId) return 'Personal'
-    return null
+    setLoading(false)
+  }, [currentUser?.id])
+
+  useEffect(() => {
+    fetchMyTasks()
+  }, [fetchMyTasks])
+
+  async function loadDoneTasks() {
+    if (!currentUser?.id) return
+    setLoadingDone(true)
+    const { data } = await supabase
+      .from('tasks')
+      .select(`
+        id, title, status, priority, due_date, assigned_to, created_by, archived,
+        project:projects(
+          project_type, resident_id,
+          resident:residents(legal_name, preferred_name)
+        )
+      `)
+      .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
+      .eq('archived', false)
+      .eq('status', 'done')
+      .order('due_date', { ascending: false, nullsFirst: true })
+    setDoneTasks(data ?? [])
+    setLoadingDone(false)
   }
 
-  const openCount = active.length
-  const doneCount = done.length
-  const total = mine.length
+  async function handleToggle(taskId, currentStatus) {
+    const newStatus = currentStatus === 'done' ? 'todo' : 'done'
+    await updateTask(taskId, { status: newStatus })
+    // Re-fetch to keep both lists fresh
+    await fetchMyTasks()
+    if (showDone) await loadDoneTasks()
+  }
+
+  const overdue  = tasks.filter(t => isOverdue(t.due_date))
+  const thisWeek = tasks.filter(t => isDueThisWeek(t.due_date))
+  const upcoming = tasks.filter(t => !isOverdue(t.due_date) && !isDueThisWeek(t.due_date))
+
+  const openCount = tasks.length
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -139,13 +184,7 @@ export default function MyTasks() {
         <div className="flex items-start justify-between mb-1">
           <div>
             <h2 className="font-display text-2xl text-sage-800">My Tasks</h2>
-            <p className="text-xs text-sage-400 mt-1">{doneCount} of {total} complete</p>
-            <div className="mt-2 h-1.5 w-48 bg-sage-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-sage-500 rounded-full transition-all duration-500"
-                style={{ width: total > 0 ? `${Math.round((doneCount / total) * 100)}%` : '0%' }}
-              />
-            </div>
+            <p className="text-xs text-sage-400 mt-1">{openCount} open task{openCount !== 1 ? 's' : ''}</p>
           </div>
           <div className="text-right">
             <p className="text-2xl font-bold text-sage-700">{openCount}</p>
@@ -156,53 +195,48 @@ export default function MyTasks() {
 
       {/* Content */}
       <div className="px-4 md:px-8 py-5 max-w-2xl">
-        {active.length === 0 && (
+        {loading ? (
+          <p className="text-center text-sm text-sage-300 py-16">Loading…</p>
+        ) : tasks.length === 0 && !showDone ? (
           <div className="text-center py-16 text-sage-300">
             <p className="text-4xl mb-3">✓</p>
             <p className="text-sm">All clear — no open tasks assigned to you.</p>
           </div>
+        ) : (
+          <>
+            <Section icon={AlertCircle} label="Overdue"       color="text-red-500"   tasks={overdue}  onToggle={handleToggle} />
+            <Section icon={Clock}       label="Due This Week" color="text-clay-600"  tasks={thisWeek} onToggle={handleToggle} />
+            <Section icon={Calendar}    label="Upcoming"      color="text-sage-500"  tasks={upcoming} onToggle={handleToggle} />
+          </>
         )}
-
-        <Section
-          icon={AlertCircle}
-          label="Overdue"
-          color="text-red-500"
-          tasks={overdue}
-          getContext={getContext}
-        />
-        <Section
-          icon={Clock}
-          label="Due This Week"
-          color="text-clay-600"
-          tasks={thisWeek}
-          getContext={getContext}
-        />
-        <Section
-          icon={Calendar}
-          label="Upcoming"
-          color="text-sage-500"
-          tasks={upcoming}
-          getContext={getContext}
-        />
 
         {/* Completed toggle */}
-        {done.length > 0 && (
-          <div className="mt-2">
-            <button
-              onClick={() => setShowDone(v => !v)}
-              className="text-xs text-sage-400 hover:text-sage-600 transition-colors mb-3"
-            >
-              {showDone ? '▾' : '▸'} {done.length} completed
-            </button>
-            {showDone && (
+        <div className="mt-2">
+          <button
+            onClick={async () => {
+              const next = !showDone
+              setShowDone(next)
+              if (next && doneTasks.length === 0) await loadDoneTasks()
+            }}
+            className="text-xs text-sage-400 hover:text-sage-600 transition-colors mb-3"
+          >
+            {showDone ? '▾' : '▸'} Show completed
+          </button>
+          {showDone && (
+            loadingDone ? (
+              <p className="text-xs text-sage-300 py-2">Loading…</p>
+            ) : (
               <div className="space-y-2 opacity-60">
-                {done.map(t => (
-                  <TaskRow key={t.id} task={t} context={getContext(t)} overdue={false} />
+                {doneTasks.map(t => (
+                  <TaskRow key={t.id} task={t} overdue={false} onToggle={handleToggle} />
                 ))}
+                {doneTasks.length === 0 && (
+                  <p className="text-xs text-sage-300 py-2">No completed tasks.</p>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            )
+          )}
+        </div>
       </div>
     </div>
   )
