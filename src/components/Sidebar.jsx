@@ -16,6 +16,7 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
   const [expandedHouseholds, setExpandedHouseholds] = useState(new Set())
   const [addHouseholdName, setAddHouseholdName] = useState('')
   const [showAddHousehold, setShowAddHousehold] = useState(false)
+  const [addHouseholdError, setAddHouseholdError] = useState('')
 
   function toggleHousehold(id) {
     setExpandedHouseholds(prev => {
@@ -33,9 +34,14 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
   async function handleAddHousehold(e) {
     e.preventDefault()
     if (!addHouseholdName.trim()) return
-    await addHousehold({ name: addHouseholdName.trim() })
-    setAddHouseholdName('')
-    setShowAddHousehold(false)
+    setAddHouseholdError('')
+    try {
+      await addHousehold({ name: addHouseholdName.trim() })
+      setAddHouseholdName('')
+      setShowAddHousehold(false)
+    } catch (err) {
+      setAddHouseholdError(err.message ?? 'Failed to add household.')
+    }
   }
 
   function navClass(active) {
@@ -47,7 +53,7 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
     <aside className="w-64 bg-white border-r border-sage-100 flex flex-col h-full shrink-0">
       {/* Logo + App name */}
       <div className="px-6 pt-7 pb-4 flex items-center gap-2.5">
-        <img src="/gormy.png" alt="GormBase" className="h-7 w-auto" />
+        <img src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png" alt="GormBase" className="h-7 w-auto" />
         <div>
           <h1 className="font-display text-xl text-sage-800 leading-tight">GormBase</h1>
           <p className="text-xs text-sage-400 leading-tight">Your household, organized.</p>
@@ -185,11 +191,14 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
               placeholder="Household name…"
               className="w-full text-xs border border-sage-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-sage-300 mb-1"
             />
+            {addHouseholdError && (
+              <p className="text-xs text-red-500 mb-1">{addHouseholdError}</p>
+            )}
             <div className="flex gap-1">
               <button type="submit" className="flex-1 text-xs py-1 bg-sage-600 text-white rounded-lg font-semibold hover:bg-sage-700">
                 Add
               </button>
-              <button type="button" onClick={() => setShowAddHousehold(false)} className="px-2 text-xs text-sage-400 hover:text-sage-600">
+              <button type="button" onClick={() => { setShowAddHousehold(false); setAddHouseholdError('') }} className="px-2 text-xs text-sage-400 hover:text-sage-600">
                 ✕
               </button>
             </div>

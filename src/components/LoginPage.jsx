@@ -26,7 +26,7 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm px-8 py-10">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <img src="/gormy.png" alt="GormBase" className="h-16 w-auto mb-4" />
+          <img src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png" alt="GormBase" className="h-16 w-auto mb-4" />
           <h1 className="font-display text-2xl text-sage-800">GormBase</h1>
           <p className="text-xs text-sage-400 mt-0.5">Your household, organized.</p>
         </div>
