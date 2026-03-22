@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react'
-import { Menu, Plus } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Menu, Plus, Bell } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskProvider, useTasks } from './contexts/TaskContext'
 import { HouseholdProvider, useHouseholds } from './contexts/HouseholdContext'
 import Sidebar from './components/Sidebar'
-import Dashboard from './components/Dashboard'
+import HomePage from './components/HomePage'
 import MyTasks from './components/MyTasks'
-import TaskList from './components/TaskList'
 import HouseholdList from './components/HouseholdList'
 import HouseholdDetail from './components/HouseholdDetail'
 import ResidentProfile from './components/ResidentProfile'
@@ -20,15 +19,16 @@ import TeamsPage from './components/TeamsPage'
 import MessagesPage from './components/MessagesPage'
 import GlobalSearch from './components/GlobalSearch'
 import QuickTaskModal from './components/QuickTaskModal'
+import DomainListPage from './components/DomainListPage'
 import LoginPage from './components/LoginPage'
+import { supabase } from './lib/supabase'
 import { DOMAIN_CONFIG } from './lib/domains'
 
 const GORMY = 'https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png'
 
-// ── All-tasks page (simple inline component) ──────────────────────────────────
+// ── All-tasks page ─────────────────────────────────────────────────────────────
 function AllTasksPage() {
   const { tasks, toggleDone } = useTasks()
-
   const open = tasks.filter(t => t.status !== 'done' && !t.archived)
   const byDomain = {}
   open.forEach(t => {
@@ -87,30 +87,82 @@ function AllTasksPage() {
   )
 }
 
+// ── Bell notification component ───────────────────────────────────────────────
+function BellIcon({ onNavigate }) {
+  const { currentUser } = useAuth()
+  const [unread, setUnread] = useState(0)
+  const channelRef = useRef(null)
+
+  useEffect(() => {
+    if (!currentUser?.id) return
+
+    // Initial count
+    supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_id', currentUser.id)
+      .eq('read', false)
+      .then(({ count }) => setUnread(count ?? 0))
+      .catch(() => {})
+
+    // Realtime subscription
+    channelRef.current = supabase.channel('bell-messages-rt')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+        filter: `recipient_id=eq.${currentUser.id}`,
+      }, () => {
+        supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('recipient_id', currentUser.id)
+          .eq('read', false)
+          .then(({ count }) => setUnread(count ?? 0))
+          .catch(() => {})
+      })
+      .subscribe()
+
+    return () => { channelRef.current?.unsubscribe() }
+  }, [currentUser?.id])
+
+  return (
+    <button
+      onClick={() => onNavigate('messages')}
+      className="relative p-2 text-sage-400 hover:text-sage-700 transition-colors shrink-0"
+      title="Messages"
+    >
+      <Bell size={20} />
+      {unread > 0 && (
+        <span
+          className="absolute top-0.5 right-0.5 bg-red-500 text-white text-xs font-semibold rounded-full flex items-center justify-center"
+          style={{ minWidth: 16, height: 16, fontSize: 10, padding: '0 3px' }}
+        >
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </button>
+  )
+}
+
 // ── Inner app — has access to all contexts ────────────────────────────────────
 function AppMain() {
-  const { lists } = useTasks()
   const { households, dbError } = useHouseholds()
 
-  const [activeView,         setActiveView]         = useState('dashboard')
-  const [activeListId,       setActiveListId]       = useState(null)
+  const [activeView,         setActiveView]         = useState('home')
   const [activeHouseholdId,  setActiveHouseholdId]  = useState(null)
   const [activeResidentId,   setActiveResidentId]   = useState(null)
   const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
+  const [activeDomain,       setActiveDomain]       = useState(null)
   const [showAddList,        setShowAddList]        = useState(false)
   const [showQuickTask,      setShowQuickTask]      = useState(false)
   const [sidebarOpen,        setSidebarOpen]        = useState(false)
 
-  // Default personal list selection once lists load
-  useEffect(() => {
-    if (!activeListId && lists.length > 0) setActiveListId(lists[0].id)
-  }, [lists])
-
   function navigate(view, params = {}) {
     setActiveView(view)
-    if (params.listId      !== undefined) setActiveListId(params.listId)
     if (params.householdId !== undefined) setActiveHouseholdId(params.householdId)
     if (params.residentId  !== undefined) setActiveResidentId(params.residentId)
+    if (params.domain      !== undefined) setActiveDomain(params.domain)
     if (params.tab         !== undefined) setActiveHouseholdTab(params.tab)
     else if (view === 'household')        setActiveHouseholdTab('details')
     setSidebarOpen(false)
@@ -118,11 +170,13 @@ function AppMain() {
 
   function pageTitle() {
     switch (activeView) {
-      case 'dashboard':      return 'Dashboard'
+      case 'home':           return 'Home'
       case 'my-tasks':       return 'My Tasks'
       case 'all-tasks':      return 'All Tasks'
       case 'calendar':       return 'Calendar'
-      case 'personal-list':  return lists.find(l => l.id === activeListId)?.name ?? 'List'
+      case 'domain-list':    return activeDomain
+          ? (DOMAIN_CONFIG[activeDomain]?.label ?? activeDomain)
+          : 'Domain'
       case 'household':      return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
       case 'household-list': return 'Households'
       case 'resident-list':  return 'Residents'
@@ -137,16 +191,17 @@ function AppMain() {
 
   function renderMain() {
     switch (activeView) {
+      case 'home':
       case 'dashboard':
-        return <Dashboard navigate={navigate} />
+        return <HomePage navigate={navigate} />
       case 'my-tasks':
         return <MyTasks />
       case 'all-tasks':
         return <AllTasksPage />
       case 'calendar':
         return <CalendarPage />
-      case 'personal-list':
-        return <TaskList listId={activeListId} />
+      case 'domain-list':
+        return <DomainListPage domain={activeDomain ?? 'housing'} key={activeDomain} />
       case 'household':
         return (
           <HouseholdDetail
@@ -176,7 +231,7 @@ function AppMain() {
       case 'team':      return <UserDirectory />
       case 'teams':     return <TeamsPage />
       case 'messages':  return <MessagesPage />
-      default:          return <Dashboard navigate={navigate} />
+      default:          return <HomePage navigate={navigate} />
     }
   }
 
@@ -201,6 +256,7 @@ function AppMain() {
         </button>
         <img src={GORMY} alt="" className="h-6 w-auto" />
         <span className="font-display text-base text-sage-800 flex-1 truncate">{pageTitle()}</span>
+        <BellIcon onNavigate={navigate} />
         <button
           onClick={() => setShowQuickTask(true)}
           className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors shrink-0"
@@ -226,9 +282,8 @@ function AppMain() {
       >
         <Sidebar
           activeView={activeView}
-          activeListId={activeListId}
+          activeDomain={activeDomain}
           navigate={navigate}
-          onAddList={() => setShowAddList(true)}
           onClose={() => setSidebarOpen(false)}
         />
       </div>
@@ -240,6 +295,7 @@ function AppMain() {
           <div className="flex-1">
             <GlobalSearch navigate={navigate} />
           </div>
+          <BellIcon onNavigate={navigate} />
           <button
             onClick={() => setShowQuickTask(true)}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-sm shrink-0"
@@ -254,11 +310,7 @@ function AppMain() {
       {showAddList && (
         <AddListModal
           onClose={() => setShowAddList(false)}
-          onCreated={id => {
-            setActiveListId(id)
-            setActiveView('personal-list')
-            setShowAddList(false)
-          }}
+          onCreated={() => setShowAddList(false)}
         />
       )}
 

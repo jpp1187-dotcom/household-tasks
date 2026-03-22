@@ -5,7 +5,7 @@ import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { DOMAIN_CONFIG } from '../lib/domains'
 
-export default function QuickTaskModal({ onClose, prefillResident = null, prefillHousehold = null }) {
+export default function QuickTaskModal({ onClose, prefillResident = null, prefillHousehold = null, prefillDomain = null }) {
   const { currentUser, allUsers } = useAuth()
   const { addTask, lists } = useTasks()
   const { residents, households } = useHouseholds()
@@ -18,7 +18,7 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
   const [selectedHouseholdId, setSelectedHouseholdId] = useState(
     prefillHousehold?.id ?? prefillResident?.householdId ?? ''
   )
-  const [domainTag, setDomainTag]             = useState('')
+  const [domainTag, setDomainTag]             = useState(prefillDomain ?? '')
   const [listId, setListId]                   = useState('')
   const [assignedTo, setAssignedTo]           = useState(currentUser?.id ?? '')
   const [priority, setPriority]               = useState('medium')

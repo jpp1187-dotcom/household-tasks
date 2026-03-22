@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import {
-  LayoutDashboard, CheckSquare, List, Activity, Users,
-  Plus, ChevronDown, ChevronRight, LogOut, X, Calendar,
-  Star, MessageSquare, Search,
+  Home, CheckSquare, Activity, Users,
+  Plus, LogOut, X, Calendar,
+  Star, MessageSquare, Search, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { getFavorites, removeFavorite, addFavorite } from '../lib/favorites'
+import { DOMAIN_CONFIG } from '../lib/domains'
 
 function SidebarAvatar({ name }) {
   const initials = (name ?? '?')
@@ -28,14 +29,15 @@ function SidebarAvatar({ name }) {
 }
 
 export default function Sidebar({
-  activeView, activeListId,
-  navigate, onAddList, onClose,
+  activeView, activeDomain,
+  navigate, onClose,
+  unreadCount = 0,
 }) {
-  const { currentUser, signOut, isAdmin } = useAuth()
-  const { lists, tasks } = useTasks()
+  const { currentUser, signOut } = useAuth()
+  const { tasks } = useTasks()
   const { households, residents } = useHouseholds()
 
-  const [listsOpen, setListsOpen] = useState(true)
+  const [domainsOpen, setDomainsOpen] = useState(true)
   const [favorites, setFavorites] = useState([])
   const [showPinSearch, setShowPinSearch] = useState(false)
   const [pinSearch, setPinSearch] = useState('')
@@ -61,16 +63,10 @@ export default function Sidebar({
     setPinSearch('')
   }
 
-  function openTaskCount(listId) {
-    return tasks.filter(t => t.listId === listId && t.status !== 'done' && !t.archived).length
-  }
-
   function navClass(active) {
     return `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium mb-0.5 transition-colors
       ${active ? 'bg-sage-100 text-sage-800' : 'text-sage-600 hover:bg-sage-50'}`
   }
-
-  const personalLists = lists.filter(l => !l.householdId && !l.archived)
 
   // Build favorite items for display
   const favItems = favorites.map(f => {
@@ -90,8 +86,10 @@ export default function Sidebar({
   const pinResults = pinQuery ? [
     ...households.filter(h => !h.archived && h.name.toLowerCase().includes(pinQuery))
       .map(h => ({ type: 'household', id: h.id, label: h.name, emoji: '🏠' })),
-    ...residents.filter(r => !r.archived && (r.legalName.toLowerCase().includes(pinQuery) || (r.preferredName && r.preferredName.toLowerCase().includes(pinQuery))))
-      .map(r => ({ type: 'resident', id: r.id, label: r.preferredName || r.legalName, emoji: '👤' })),
+    ...residents.filter(r => !r.archived && (
+      r.legalName.toLowerCase().includes(pinQuery) ||
+      (r.preferredName && r.preferredName.toLowerCase().includes(pinQuery))
+    )).map(r => ({ type: 'resident', id: r.id, label: r.preferredName || r.legalName, emoji: '👤' })),
   ].slice(0, 6) : []
 
   return (
@@ -108,7 +106,7 @@ export default function Sidebar({
           <p className="text-xs text-sage-400 leading-tight">Your household, organized.</p>
         </div>
         {onClose && (
-          <button onClick={onClose} className="md:hidden text-sage-400 hover:text-sage-600 transition-colors -mr-1" aria-label="Close menu">
+          <button onClick={onClose} className="md:hidden text-sage-400 hover:text-sage-600 transition-colors -mr-1">
             <X size={18} />
           </button>
         )}
@@ -116,12 +114,12 @@ export default function Sidebar({
 
       <nav className="flex-1 px-3 overflow-y-auto pb-2">
 
-        {/* ── General ─────────────────────────────── */}
+        {/* ── General ────────────────────────────── */}
         <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-2">General</p>
 
-        <button onClick={() => navigate('dashboard')} className={navClass(activeView === 'dashboard')}>
-          <LayoutDashboard size={16} />
-          <span>Dashboard</span>
+        <button onClick={() => navigate('home')} className={navClass(activeView === 'home' || activeView === 'dashboard')}>
+          <Home size={16} />
+          <span>Home</span>
         </button>
 
         <button onClick={() => navigate('my-tasks')} className={navClass(activeView === 'my-tasks')}>
@@ -136,47 +134,38 @@ export default function Sidebar({
 
         <button onClick={() => navigate('messages')} className={navClass(activeView === 'messages')}>
           <MessageSquare size={16} />
-          <span>Messages</span>
+          <span className="flex-1 text-left">Messages</span>
+          {unreadCount > 0 && (
+            <span className="text-xs bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-semibold shrink-0">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </button>
 
-        {/* Personal Lists — collapsible */}
+        {/* ── Domains ────────────────────────────── */}
         <button
-          onClick={() => setListsOpen(v => !v)}
-          className={navClass(activeView === 'personal-list')}
+          onClick={() => setDomainsOpen(v => !v)}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-sage-400 hover:bg-sage-50 transition-colors mb-0.5 mt-3"
         >
-          <List size={16} />
-          <span className="flex-1 text-left">Personal Lists</span>
-          {listsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span className="flex-1 text-left text-xs font-semibold uppercase tracking-widest">Domains</span>
+          {domainsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
 
-        {listsOpen && (
-          <div className="ml-6 mb-1">
-            {personalLists.map(list => {
-              const open = openTaskCount(list.id)
-              return (
-                <button
-                  key={list.id}
-                  onClick={() => navigate('personal-list', { listId: list.id })}
-                  className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
-                    ${activeView === 'personal-list' && activeListId === list.id
-                      ? 'bg-sage-100 text-sage-800 font-medium'
-                      : 'text-sage-500 hover:bg-sage-50'}`}
-                >
-                  <span className="text-base leading-none">{list.icon}</span>
-                  <span className="flex-1 text-left truncate">{list.name}</span>
-                  {open > 0 && (
-                    <span className="text-xs bg-sage-200 text-sage-700 rounded-full px-1.5 py-0.5">{open}</span>
-                  )}
-                </button>
-              )
-            })}
-            {isAdmin() && (
-              <button onClick={onAddList}
-                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-sage-400 hover:text-sage-600 hover:bg-sage-50 transition-colors">
-                <Plus size={13} />
-                <span>New list</span>
+        {domainsOpen && (
+          <div className="ml-2 mb-1">
+            {Object.entries(DOMAIN_CONFIG).filter(([k]) => k !== 'personal').map(([key, cfg]) => (
+              <button
+                key={key}
+                onClick={() => navigate('domain-list', { domain: key })}
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
+                  ${activeView === 'domain-list' && activeDomain === key
+                    ? 'bg-sage-100 text-sage-800 font-medium'
+                    : 'text-sage-500 hover:bg-sage-50'}`}
+              >
+                <span className="text-sm leading-none">{cfg.icon}</span>
+                <span className="truncate">{cfg.label}</span>
               </button>
-            )}
+            ))}
           </div>
         )}
 
@@ -210,7 +199,6 @@ export default function Sidebar({
           </div>
         ))}
 
-        {/* Pin search */}
         {showPinSearch ? (
           <div className="px-1 mb-2">
             <div className="relative">
@@ -247,18 +235,6 @@ export default function Sidebar({
           </button>
         )}
 
-        {/* ── More ──────────────────────────────────── */}
-        <div className="mt-4">
-          <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1">More</p>
-          <button onClick={() => navigate('teams')} className={navClass(activeView === 'teams')}>
-            <Users size={16} />
-            <span>Teams</span>
-          </button>
-          <button onClick={() => navigate('activity')} className={navClass(activeView === 'activity')}>
-            <Activity size={16} />
-            <span>Activity</span>
-          </button>
-        </div>
       </nav>
 
       {/* ── Bottom: user profile link ────────────── */}
