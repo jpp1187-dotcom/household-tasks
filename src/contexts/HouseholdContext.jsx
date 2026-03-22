@@ -4,7 +4,7 @@ import { logActivity } from '../lib/logActivity'
 import { useAuth } from './AuthContext'
 
 // ─── Context ──────────────────────────────────────────────────────────────────
-// Exposes: households, projects, activity, loading
+// Exposes: households, projects, activity, loading, dbError
 //          addHousehold, updateHousehold
 //          addProject, updateProject
 //          refreshActivity
@@ -49,12 +49,18 @@ function mapActivity(row) {
   }
 }
 
+// Detect "table does not exist" errors from Supabase/PostgreSQL
+function isMissingTable(error) {
+  return error?.code === '42P01' || error?.message?.includes('does not exist')
+}
+
 export function HouseholdProvider({ children }) {
   const { currentUser } = useAuth()
   const [households, setHouseholds] = useState([])
   const [projects, setProjects] = useState([])
   const [activity, setActivity] = useState([])
   const [loading, setLoading] = useState(true)
+  const [dbError, setDbError] = useState(null) // set when required tables are missing
 
   useEffect(() => {
     Promise.all([
@@ -62,6 +68,28 @@ export function HouseholdProvider({ children }) {
       supabase.from('projects').select('*').order('created_at', { ascending: true }),
       supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(100),
     ]).then(([hRes, pRes, aRes]) => {
+      // Check for missing-table errors and surface them clearly
+      const missingTables = []
+      if (hRes.error) {
+        if (isMissingTable(hRes.error)) missingTables.push('households')
+        else console.error('[HouseholdContext] households error:', hRes.error.message)
+      }
+      if (pRes.error) {
+        if (isMissingTable(pRes.error)) missingTables.push('projects')
+        else console.error('[HouseholdContext] projects error:', pRes.error.message)
+      }
+      if (aRes.error) {
+        if (isMissingTable(aRes.error)) missingTables.push('activity_log')
+        else console.error('[HouseholdContext] activity_log error:', aRes.error.message)
+      }
+
+      if (missingTables.length > 0) {
+        setDbError(
+          `Required tables not found in Supabase: ${missingTables.join(', ')}. ` +
+          'Please run the GormBase schema SQL in your Supabase SQL Editor.'
+        )
+      }
+
       if (hRes.data) setHouseholds(hRes.data.map(mapHousehold))
       if (pRes.data) setProjects(pRes.data.map(mapProject))
       if (aRes.data) setActivity(aRes.data.map(mapActivity))
@@ -130,17 +158,21 @@ export function HouseholdProvider({ children }) {
   }
 
   async function refreshActivity() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('activity_log')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(200)
+    if (error) {
+      console.error('[HouseholdContext] refreshActivity error:', error.message)
+      return
+    }
     if (data) setActivity(data.map(mapActivity))
   }
 
   return (
     <HouseholdContext.Provider value={{
-      households, projects, activity, loading,
+      households, projects, activity, loading, dbError,
       addHousehold, updateHousehold,
       addProject, updateProject,
       refreshActivity,

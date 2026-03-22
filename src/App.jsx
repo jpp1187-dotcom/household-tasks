@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskProvider, useTasks } from './contexts/TaskContext'
-import { HouseholdProvider } from './contexts/HouseholdContext'
+import { HouseholdProvider, useHouseholds } from './contexts/HouseholdContext'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import MyTasks from './components/MyTasks'
@@ -11,6 +11,7 @@ import HouseholdDetail from './components/HouseholdDetail'
 import ProjectDetail from './components/ProjectDetail'
 import ActivityFeed from './components/ActivityFeed'
 import ProfilePage from './components/ProfilePage'
+import UserDirectory from './components/UserDirectory'
 import AddListModal from './components/AddListModal'
 import LoginPage from './components/LoginPage'
 
@@ -18,6 +19,7 @@ import LoginPage from './components/LoginPage'
 function AppMain() {
   const { allUsers } = useAuth()
   const { lists } = useTasks()
+  const { dbError } = useHouseholds()
 
   const [activeView,        setActiveView]        = useState('dashboard')
   const [activeListId,      setActiveListId]      = useState(null)
@@ -73,6 +75,8 @@ function AppMain() {
         return <ActivityFeed />
       case 'profile':
         return <ProfilePage />
+      case 'team':
+        return <UserDirectory />
       default:
         return <Dashboard />
     }
@@ -80,6 +84,12 @@ function AppMain() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-sage-50">
+      {dbError && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-clay-50 border-b border-clay-200 px-6 py-2 text-xs text-clay-800 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>{dbError}</span>
+        </div>
+      )}
       <Sidebar
         activeView={activeView}
         activeListId={activeListId}

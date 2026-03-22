@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import {
-  LayoutDashboard, CheckSquare, List, Home, Activity, User,
+  LayoutDashboard, CheckSquare, List, Home, Activity, Users,
   Plus, ChevronDown, ChevronRight, LogOut,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
@@ -209,40 +209,46 @@ export default function Sidebar({ activeView, activeListId, activeHouseholdId, a
         <div className="mt-4">
           <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1">More</p>
           <button
+            onClick={() => navigate('team')}
+            className={navClass(activeView === 'team')}
+          >
+            <Users size={16} />
+            <span>Team</span>
+          </button>
+          <button
             onClick={() => navigate('activity')}
             className={navClass(activeView === 'activity')}
           >
             <Activity size={16} />
             <span>Activity</span>
           </button>
-          <button
-            onClick={() => navigate('profile')}
-            className={navClass(activeView === 'profile')}
-          >
-            <User size={16} />
-            <span>Profile</span>
-          </button>
         </div>
       </nav>
 
-      {/* Signed-in user + sign out */}
+      {/* Signed-in user — click to go to Profile */}
       <div className="px-3 pb-5 pt-3 border-t border-sage-100">
-        <div className="flex items-center gap-3 px-3 py-2">
-          {currentUser?.avatar_url ? (
-            <img src={currentUser.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
-          ) : (
-            <span className="text-xl shrink-0">{currentUser?.avatar ?? '🧑'}</span>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sage-700 leading-tight truncate">
-              {currentUser?.name ?? currentUser?.email}
-            </p>
-            <p className="text-xs text-sage-400 capitalize">{currentUser?.role}</p>
-          </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('profile')}
+            className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg min-w-0 transition-colors
+              ${activeView === 'profile' ? 'bg-sage-100' : 'hover:bg-sage-50'}`}
+          >
+            {currentUser?.avatar_url ? (
+              <img src={currentUser.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+            ) : (
+              <span className="text-xl shrink-0">{currentUser?.avatar ?? '🧑'}</span>
+            )}
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-medium text-sage-700 leading-tight truncate">
+                {currentUser?.name ?? currentUser?.email}
+              </p>
+              <p className="text-xs text-sage-400 capitalize">{currentUser?.role}</p>
+            </div>
+          </button>
           <button
             onClick={signOut}
             title="Sign out"
-            className="text-sage-300 hover:text-sage-600 transition-colors"
+            className="text-sage-300 hover:text-sage-600 transition-colors px-1"
           >
             <LogOut size={15} />
           </button>

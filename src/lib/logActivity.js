@@ -1,7 +1,9 @@
 /**
  * logActivity — insert a row into activity_log.
- * Silently no-ops if the table doesn't exist yet (so the app never crashes
- * just because activity logging is unavailable).
+ *
+ * NOTE: Supabase JS never throws — it returns { error }.
+ * We check that explicitly instead of using try/catch, which would
+ * never fire and silently swallow write failures.
  */
 export async function logActivity(
   supabase,
@@ -13,17 +15,16 @@ export async function logActivity(
   oldValue = null,
   newValue = null,
 ) {
-  try {
-    await supabase.from('activity_log').insert({
-      user_id: userId,
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      entity_name: entityName,
-      old_value: oldValue,
-      new_value: newValue,
-    })
-  } catch (err) {
-    console.warn('[logActivity] Failed to log activity:', err?.message ?? err)
+  const { error } = await supabase.from('activity_log').insert({
+    user_id: userId,
+    action,
+    entity_type: entityType,
+    entity_id: entityId,
+    entity_name: entityName,
+    old_value: oldValue,
+    new_value: newValue,
+  })
+  if (error) {
+    console.warn('[logActivity] Failed to log activity:', error.message, '| code:', error.code)
   }
 }
