@@ -31,10 +31,11 @@ function TextInput({ value, onChange, placeholder = '' }) {
 // Resident card in the Residents tab
 function ResidentCard({ resident, projects, onClick }) {
   const residentProjects = projects.filter(p => p.residentId === resident.id)
-  const displayName = resident.preferredName
-    ? `${resident.preferredName}`
-    : `${resident.legalFirst} ${resident.legalLast}`
-  const initials = (resident.legalFirst[0] ?? '').toUpperCase() + (resident.legalLast[0] ?? '').toUpperCase()
+  const displayName = resident.preferredName || resident.legalName
+  const words = (resident.legalName ?? '').trim().split(/\s+/)
+  const initials = words.length >= 2
+    ? (words[0][0] ?? '').toUpperCase() + (words[words.length - 1][0] ?? '').toUpperCase()
+    : (words[0]?.[0] ?? '?').toUpperCase()
 
   return (
     <button
@@ -48,22 +49,17 @@ function ResidentCard({ resident, projects, onClick }) {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-sage-800 truncate">{displayName}</p>
           {resident.preferredName && (
-            <p className="text-xs text-sage-400 truncate">
-              {resident.legalFirst} {resident.legalLast}
-            </p>
+            <p className="text-xs text-sage-400 truncate">{resident.legalName}</p>
           )}
         </div>
       </div>
 
       <div className="flex flex-wrap gap-1 text-xs mb-1">
-        {resident.pronouns && (
-          <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.pronouns}</span>
-        )}
-        {resident.dob && (
-          <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">DOB: {resident.dob}</span>
-        )}
         {resident.primaryLanguage && (
           <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.primaryLanguage}</span>
+        )}
+        {resident.genderIdentity && (
+          <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.genderIdentity}</span>
         )}
       </div>
 
@@ -106,8 +102,8 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
     if (household) {
       setForm({
         name: household.name ?? '',
-        address1: household.address1 ?? '',
-        address2: household.address2 ?? '',
+        address_1: household.address_1 ?? '',
+        address_2: household.address_2 ?? '',
         city: household.city ?? '',
         state: household.state ?? '',
         zip: household.zip ?? '',
@@ -190,10 +186,10 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Address line 1">
-              <TextInput value={form.address1} onChange={v => setField('address1', v)} placeholder="123 Main St" />
+              <TextInput value={form.address_1} onChange={v => setField('address_1', v)} placeholder="123 Main St" />
             </Field>
             <Field label="Address line 2">
-              <TextInput value={form.address2} onChange={v => setField('address2', v)} placeholder="Apt 4B" />
+              <TextInput value={form.address_2} onChange={v => setField('address_2', v)} placeholder="Apt 4B" />
             </Field>
           </div>
 

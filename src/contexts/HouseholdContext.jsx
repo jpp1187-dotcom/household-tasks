@@ -17,8 +17,8 @@ function mapHousehold(row) {
     id: row.id,
     name: row.name,
     address: row.address ?? '',        // legacy field
-    address1: row.address1 ?? '',
-    address2: row.address2 ?? '',
+    address_1: row.address_1 ?? '',    // DB column: address_1
+    address_2: row.address_2 ?? '',    // DB column: address_2
     city: row.city ?? '',
     state: row.state ?? '',
     zip: row.zip ?? '',
@@ -48,24 +48,32 @@ function mapProject(row) {
   }
 }
 
+// Residents table actual column names:
+// household_id, legal_name, preferred_name, gender_identity, sex_at_birth,
+// race_ethnicity, primary_language, contact_method, contact_address,
+// mailing_address, emergency_contact, ssn_masked, medicaid_id, medicare_id,
+// mpi_id, gov_id_type, gov_id_number, other_insurance_id
 function mapResident(row) {
   return {
     id: row.id,
     householdId: row.household_id,
-    legalFirst: row.legal_first ?? '',
-    legalLast: row.legal_last ?? '',
+    legalName: row.legal_name ?? '',
     preferredName: row.preferred_name ?? '',
-    pronouns: row.pronouns ?? '',
-    dob: row.dob ?? null,
+    genderIdentity: row.gender_identity ?? '',
+    sexAtBirth: row.sex_at_birth ?? '',
+    raceEthnicity: row.race_ethnicity ?? '',
     primaryLanguage: row.primary_language ?? '',
-    gender: row.gender ?? '',
-    contactPhone: row.contact_phone ?? '',
-    contactEmail: row.contact_email ?? '',
+    contactMethod: row.contact_method ?? '',
     contactAddress: row.contact_address ?? '',
-    ssn: row.ssn ?? '',
+    mailingAddress: row.mailing_address ?? '',
+    emergencyContact: row.emergency_contact ?? '',
+    ssnMasked: row.ssn_masked ?? '',
     medicaidId: row.medicaid_id ?? '',
-    otherIdName: row.other_id_name ?? '',
-    otherIdValue: row.other_id_value ?? '',
+    medicareId: row.medicare_id ?? '',
+    mpiId: row.mpi_id ?? '',
+    govIdType: row.gov_id_type ?? '',
+    govIdNumber: row.gov_id_number ?? '',
+    otherInsuranceId: row.other_insurance_id ?? '',
     createdBy: row.created_by,
     createdAt: row.created_at,
   }
@@ -161,8 +169,8 @@ export function HouseholdProvider({ children }) {
     const dbChanges = {}
     if ('name'           in changes) dbChanges.name            = changes.name
     if ('address'        in changes) dbChanges.address         = changes.address
-    if ('address1'       in changes) dbChanges.address1        = changes.address1
-    if ('address2'       in changes) dbChanges.address2        = changes.address2
+    if ('address_1'      in changes) dbChanges.address_1       = changes.address_1   // DB: address_1
+    if ('address_2'      in changes) dbChanges.address_2       = changes.address_2   // DB: address_2
     if ('city'           in changes) dbChanges.city            = changes.city
     if ('state'          in changes) dbChanges.state           = changes.state
     if ('zip'            in changes) dbChanges.zip             = changes.zip
@@ -204,10 +212,10 @@ export function HouseholdProvider({ children }) {
 
   async function updateProject(id, changes) {
     const dbChanges = {}
-    if ('name'        in changes) dbChanges.name        = changes.name
-    if ('description' in changes) dbChanges.description = changes.description
-    if ('status'      in changes) dbChanges.status      = changes.status
-    if ('dueDate'     in changes) dbChanges.due_date    = changes.dueDate
+    if ('name'        in changes) dbChanges.name         = changes.name
+    if ('description' in changes) dbChanges.description  = changes.description
+    if ('status'      in changes) dbChanges.status       = changes.status
+    if ('dueDate'     in changes) dbChanges.due_date     = changes.dueDate
     if ('projectType' in changes) dbChanges.project_type = changes.projectType
     const { error } = await supabase.from('projects').update(dbChanges).eq('id', id)
     if (error) throw error
@@ -221,56 +229,60 @@ export function HouseholdProvider({ children }) {
     const { data: row, error } = await supabase
       .from('residents')
       .insert({
-        household_id: data.householdId,
-        legal_first: data.legalFirst ?? '',
-        legal_last: data.legalLast ?? '',
-        preferred_name: data.preferredName ?? '',
-        pronouns: data.pronouns ?? '',
-        dob: data.dob ?? null,
+        household_id:     data.householdId,
+        legal_name:       data.legalName ?? '',
+        preferred_name:   data.preferredName ?? '',
+        gender_identity:  data.genderIdentity ?? '',
+        sex_at_birth:     data.sexAtBirth ?? '',
+        race_ethnicity:   data.raceEthnicity ?? '',
         primary_language: data.primaryLanguage ?? '',
-        gender: data.gender ?? '',
-        contact_phone: data.contactPhone ?? '',
-        contact_email: data.contactEmail ?? '',
-        contact_address: data.contactAddress ?? '',
-        ssn: data.ssn ?? '',
-        medicaid_id: data.medicaidId ?? '',
-        other_id_name: data.otherIdName ?? '',
-        other_id_value: data.otherIdValue ?? '',
-        created_by: currentUser?.id,
+        contact_method:   data.contactMethod ?? '',
+        contact_address:  data.contactAddress ?? '',
+        mailing_address:  data.mailingAddress ?? '',
+        emergency_contact: data.emergencyContact ?? '',
+        ssn_masked:       data.ssnMasked ?? '',
+        medicaid_id:      data.medicaidId ?? '',
+        medicare_id:      data.medicareId ?? '',
+        mpi_id:           data.mpiId ?? '',
+        gov_id_type:      data.govIdType ?? '',
+        gov_id_number:    data.govIdNumber ?? '',
+        other_insurance_id: data.otherInsuranceId ?? '',
+        created_by:       currentUser?.id,
       })
       .select()
       .single()
     if (error) throw error
     const newR = mapResident(row)
     setResidents(prev => [...prev, newR])
-    await logActivity(supabase, currentUser?.id, 'created', 'resident', newR.id,
-      `${newR.legalFirst} ${newR.legalLast}`)
+    await logActivity(supabase, currentUser?.id, 'created', 'resident', newR.id, newR.legalName)
     return newR
   }
 
   async function updateResident(id, changes) {
     const dbChanges = {}
-    if ('legalFirst'      in changes) dbChanges.legal_first     = changes.legalFirst
-    if ('legalLast'       in changes) dbChanges.legal_last      = changes.legalLast
-    if ('preferredName'   in changes) dbChanges.preferred_name  = changes.preferredName
-    if ('pronouns'        in changes) dbChanges.pronouns        = changes.pronouns
-    if ('dob'             in changes) dbChanges.dob             = changes.dob
-    if ('primaryLanguage' in changes) dbChanges.primary_language = changes.primaryLanguage
-    if ('gender'          in changes) dbChanges.gender          = changes.gender
-    if ('contactPhone'    in changes) dbChanges.contact_phone   = changes.contactPhone
-    if ('contactEmail'    in changes) dbChanges.contact_email   = changes.contactEmail
-    if ('contactAddress'  in changes) dbChanges.contact_address = changes.contactAddress
-    if ('ssn'             in changes) dbChanges.ssn             = changes.ssn
-    if ('medicaidId'      in changes) dbChanges.medicaid_id     = changes.medicaidId
-    if ('otherIdName'     in changes) dbChanges.other_id_name   = changes.otherIdName
-    if ('otherIdValue'    in changes) dbChanges.other_id_value  = changes.otherIdValue
+    if ('legalName'       in changes) dbChanges.legal_name        = changes.legalName
+    if ('preferredName'   in changes) dbChanges.preferred_name    = changes.preferredName
+    if ('genderIdentity'  in changes) dbChanges.gender_identity   = changes.genderIdentity
+    if ('sexAtBirth'      in changes) dbChanges.sex_at_birth      = changes.sexAtBirth
+    if ('raceEthnicity'   in changes) dbChanges.race_ethnicity    = changes.raceEthnicity
+    if ('primaryLanguage' in changes) dbChanges.primary_language  = changes.primaryLanguage
+    if ('contactMethod'   in changes) dbChanges.contact_method    = changes.contactMethod
+    if ('contactAddress'  in changes) dbChanges.contact_address   = changes.contactAddress
+    if ('mailingAddress'  in changes) dbChanges.mailing_address   = changes.mailingAddress
+    if ('emergencyContact' in changes) dbChanges.emergency_contact = changes.emergencyContact
+    if ('ssnMasked'       in changes) dbChanges.ssn_masked        = changes.ssnMasked
+    if ('medicaidId'      in changes) dbChanges.medicaid_id       = changes.medicaidId
+    if ('medicareId'      in changes) dbChanges.medicare_id       = changes.medicareId
+    if ('mpiId'           in changes) dbChanges.mpi_id            = changes.mpiId
+    if ('govIdType'       in changes) dbChanges.gov_id_type       = changes.govIdType
+    if ('govIdNumber'     in changes) dbChanges.gov_id_number     = changes.govIdNumber
+    if ('otherInsuranceId' in changes) dbChanges.other_insurance_id = changes.otherInsuranceId
 
     const { error } = await supabase.from('residents').update(dbChanges).eq('id', id)
     if (error) throw error
     setResidents(prev => prev.map(r => r.id === id ? { ...r, ...changes } : r))
     const r = residents.find(r => r.id === id)
-    await logActivity(supabase, currentUser?.id, 'updated', 'resident', id,
-      r ? `${r.legalFirst} ${r.legalLast}` : id)
+    await logActivity(supabase, currentUser?.id, 'updated', 'resident', id, r?.legalName ?? id)
   }
 
   async function refreshActivity() {

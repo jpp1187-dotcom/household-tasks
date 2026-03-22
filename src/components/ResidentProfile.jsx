@@ -42,8 +42,8 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
   if (!resident) return <div className="p-8 text-sage-400">Resident not found.</div>
 
   const displayName = resident.preferredName
-    ? `${resident.preferredName} (${resident.legalFirst} ${resident.legalLast})`
-    : `${resident.legalFirst} ${resident.legalLast}`
+    ? `${resident.preferredName} (${resident.legalName})`
+    : resident.legalName
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-8 max-w-3xl">
@@ -62,13 +62,17 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
           <div className="flex items-center gap-3">
             {/* Initials avatar */}
             <div className="w-12 h-12 rounded-full bg-sage-200 flex items-center justify-center text-lg font-semibold text-sage-700 shrink-0">
-              {(resident.legalFirst[0] ?? '?').toUpperCase()}
-              {(resident.legalLast[0] ?? '').toUpperCase()}
+              {(() => {
+                const words = (resident.legalName ?? '').trim().split(/\s+/)
+                return words.length >= 2
+                  ? (words[0][0] ?? '?').toUpperCase() + (words[words.length - 1][0] ?? '').toUpperCase()
+                  : (words[0]?.[0] ?? '?').toUpperCase()
+              })()}
             </div>
             <div>
               <h2 className="font-display text-2xl text-sage-800">{displayName}</h2>
-              {resident.pronouns && (
-                <p className="text-xs text-sage-400 mt-0.5">{resident.pronouns}</p>
+              {resident.genderIdentity && (
+                <p className="text-xs text-sage-400 mt-0.5">{resident.genderIdentity}</p>
               )}
             </div>
           </div>
@@ -86,20 +90,21 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
 
       {/* Identity */}
       <Section title="Identity">
-        <InfoRow label="Legal name" value={`${resident.legalFirst} ${resident.legalLast}`} />
+        <InfoRow label="Legal name" value={resident.legalName} />
         <InfoRow label="Preferred name" value={resident.preferredName} />
-        <InfoRow label="Pronouns" value={resident.pronouns} />
-        <InfoRow label="Date of birth" value={resident.dob} />
-        <InfoRow label="Gender" value={resident.gender} />
+        <InfoRow label="Gender identity" value={resident.genderIdentity} />
+        <InfoRow label="Sex at birth" value={resident.sexAtBirth} />
+        <InfoRow label="Race / ethnicity" value={resident.raceEthnicity} />
         <InfoRow label="Primary language" value={resident.primaryLanguage} />
       </Section>
 
       {/* Contact */}
       <Section title="Contact">
-        <InfoRow label="Phone" value={resident.contactPhone} />
-        <InfoRow label="Email" value={resident.contactEmail} />
-        <InfoRow label="Address" value={resident.contactAddress} />
-        {!resident.contactPhone && !resident.contactEmail && !resident.contactAddress && (
+        <InfoRow label="Contact method" value={resident.contactMethod} />
+        <InfoRow label="Contact address" value={resident.contactAddress} />
+        <InfoRow label="Mailing address" value={resident.mailingAddress} />
+        <InfoRow label="Emergency contact" value={resident.emergencyContact} />
+        {!resident.contactMethod && !resident.contactAddress && !resident.mailingAddress && !resident.emergencyContact && (
           <p className="text-xs text-sage-300">No contact information on file.</p>
         )}
       </Section>
@@ -118,11 +123,14 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
         </div>
         {showSensitive ? (
           <>
-            <InfoRow label="SSN" value={resident.ssn || '—'} />
+            <InfoRow label="SSN (masked)" value={resident.ssnMasked || '—'} />
             <InfoRow label="Medicaid ID" value={resident.medicaidId || '—'} />
-            {resident.otherIdName && (
-              <InfoRow label={resident.otherIdName} value={resident.otherIdValue} />
+            <InfoRow label="Medicare ID" value={resident.medicareId || '—'} />
+            {resident.govIdType && (
+              <InfoRow label={resident.govIdType} value={resident.govIdNumber} />
             )}
+            <InfoRow label="MPI ID" value={resident.mpiId || '—'} />
+            <InfoRow label="Other insurance ID" value={resident.otherInsuranceId || '—'} />
           </>
         ) : (
           <p className="text-xs text-sage-300 italic">Hidden — click Show to reveal.</p>

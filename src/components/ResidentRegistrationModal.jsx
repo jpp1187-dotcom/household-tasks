@@ -36,11 +36,11 @@ function TextInput({ value, onChange, placeholder = '', type = 'text', disabled 
 
 const EMPTY = {
   // Identity
-  legalFirst: '', legalLast: '', preferredName: '', pronouns: '', dob: '', primaryLanguage: '', gender: '',
+  legalName: '', preferredName: '', genderIdentity: '', sexAtBirth: '', raceEthnicity: '', primaryLanguage: '',
   // Contact
-  contactPhone: '', contactEmail: '', contactAddress: '',
+  contactMethod: '', contactAddress: '', mailingAddress: '', emergencyContact: '',
   // Identifiers
-  ssn: '', medicaidId: '', otherIdName: '', otherIdValue: '',
+  ssnMasked: '', medicaidId: '', medicareId: '', govIdType: '', govIdNumber: '', mpiId: '', otherInsuranceId: '',
   // Projects
   projectTypes: [],
 }
@@ -72,13 +72,13 @@ export default function ResidentRegistrationModal({ householdId, existingResiden
   }
 
   function canProceed() {
-    if (step === 0) return (form.legalFirst.trim() && form.legalLast.trim())
+    if (step === 0) return form.legalName.trim().length > 0
     return true
   }
 
   async function handleSubmit() {
-    if (!form.legalFirst.trim() || !form.legalLast.trim()) {
-      setError('Legal first and last name are required.')
+    if (!form.legalName.trim()) {
+      setError('Legal name is required.')
       return
     }
     setSaving(true)
@@ -97,7 +97,7 @@ export default function ResidentRegistrationModal({ householdId, existingResiden
             householdId,
             residentId: resident.id,
             projectType: type,
-            name: `${form.legalFirst} ${form.legalLast} — ${label}`,
+            name: `${form.legalName} — ${label}`,
             status: 'active',
           })
         }
@@ -156,28 +156,23 @@ export default function ResidentRegistrationModal({ householdId, existingResiden
           {/* ── Step 0: Identity ── */}
           {step === 0 && (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Legal first name *">
-                  <TextInput value={form.legalFirst} onChange={v => set('legalFirst', v)} placeholder="First" />
-                </Field>
-                <Field label="Legal last name *">
-                  <TextInput value={form.legalLast} onChange={v => set('legalLast', v)} placeholder="Last" />
-                </Field>
-              </div>
+              <Field label="Legal name *">
+                <TextInput value={form.legalName} onChange={v => set('legalName', v)} placeholder="Full legal name" />
+              </Field>
               <Field label="Preferred name">
                 <TextInput value={form.preferredName} onChange={v => set('preferredName', v)} placeholder="Goes by…" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Pronouns">
-                  <TextInput value={form.pronouns} onChange={v => set('pronouns', v)} placeholder="they/them" />
+                <Field label="Gender identity">
+                  <TextInput value={form.genderIdentity} onChange={v => set('genderIdentity', v)} placeholder="Optional" />
                 </Field>
-                <Field label="Gender">
-                  <TextInput value={form.gender} onChange={v => set('gender', v)} placeholder="Optional" />
+                <Field label="Sex at birth">
+                  <TextInput value={form.sexAtBirth} onChange={v => set('sexAtBirth', v)} placeholder="Optional" />
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Date of birth">
-                  <TextInput value={form.dob} onChange={v => set('dob', v)} type="date" />
+                <Field label="Race / ethnicity">
+                  <TextInput value={form.raceEthnicity} onChange={v => set('raceEthnicity', v)} placeholder="Optional" />
                 </Field>
                 <Field label="Primary language">
                   <TextInput value={form.primaryLanguage} onChange={v => set('primaryLanguage', v)} placeholder="English" />
@@ -189,20 +184,29 @@ export default function ResidentRegistrationModal({ householdId, existingResiden
           {/* ── Step 1: Contact ── */}
           {step === 1 && (
             <>
-              <Field label="Phone">
-                <TextInput value={form.contactPhone} onChange={v => set('contactPhone', v)} placeholder="(555) 000-0000" type="tel" />
+              <Field label="Contact method (phone / email)">
+                <TextInput value={form.contactMethod} onChange={v => set('contactMethod', v)} placeholder="(555) 000-0000 or email" />
               </Field>
-              <Field label="Email">
-                <TextInput value={form.contactEmail} onChange={v => set('contactEmail', v)} placeholder="resident@example.com" type="email" />
-              </Field>
-              <Field label="Mailing address">
+              <Field label="Contact address">
                 <textarea
                   value={form.contactAddress}
                   onChange={e => set('contactAddress', e.target.value)}
-                  rows={3}
+                  rows={2}
                   placeholder="123 Main St, City, ST 00000"
                   className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 resize-none focus:outline-none focus:ring-2 focus:ring-sage-300"
                 />
+              </Field>
+              <Field label="Mailing address (if different)">
+                <textarea
+                  value={form.mailingAddress}
+                  onChange={e => set('mailingAddress', e.target.value)}
+                  rows={2}
+                  placeholder="Leave blank if same as contact address"
+                  className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 resize-none focus:outline-none focus:ring-2 focus:ring-sage-300"
+                />
+              </Field>
+              <Field label="Emergency contact">
+                <TextInput value={form.emergencyContact} onChange={v => set('emergencyContact', v)} placeholder="Name and phone number" />
               </Field>
             </>
           )}
@@ -213,18 +217,31 @@ export default function ResidentRegistrationModal({ householdId, existingResiden
               <div className="bg-clay-50 border border-clay-200 rounded-lg px-4 py-3 text-xs text-clay-700 mb-2">
                 These fields are stored in the database but never logged in activity history.
               </div>
-              <Field label="SSN (last 4 or full)">
-                <TextInput value={form.ssn} onChange={v => set('ssn', v)} placeholder="XXX-XX-XXXX" />
-              </Field>
-              <Field label="Medicaid ID">
-                <TextInput value={form.medicaidId} onChange={v => set('medicaidId', v)} placeholder="Member ID" />
+              <Field label="SSN (masked)">
+                <TextInput value={form.ssnMasked} onChange={v => set('ssnMasked', v)} placeholder="XXX-XX-XXXX" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Other ID name">
-                  <TextInput value={form.otherIdName} onChange={v => set('otherIdName', v)} placeholder="Case #, etc." />
+                <Field label="Medicaid ID">
+                  <TextInput value={form.medicaidId} onChange={v => set('medicaidId', v)} placeholder="Member ID" />
                 </Field>
-                <Field label="Other ID value">
-                  <TextInput value={form.otherIdValue} onChange={v => set('otherIdValue', v)} placeholder="Value" />
+                <Field label="Medicare ID">
+                  <TextInput value={form.medicareId} onChange={v => set('medicareId', v)} placeholder="Beneficiary ID" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Gov ID type">
+                  <TextInput value={form.govIdType} onChange={v => set('govIdType', v)} placeholder="Driver's license, etc." />
+                </Field>
+                <Field label="Gov ID number">
+                  <TextInput value={form.govIdNumber} onChange={v => set('govIdNumber', v)} placeholder="ID number" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="MPI ID">
+                  <TextInput value={form.mpiId} onChange={v => set('mpiId', v)} placeholder="Master Patient Index" />
+                </Field>
+                <Field label="Other insurance ID">
+                  <TextInput value={form.otherInsuranceId} onChange={v => set('otherInsuranceId', v)} placeholder="Plan ID" />
                 </Field>
               </div>
 
