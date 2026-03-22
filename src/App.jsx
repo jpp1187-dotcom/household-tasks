@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Menu } from 'lucide-react'
+import { Menu, Plus } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskProvider, useTasks } from './contexts/TaskContext'
 import { HouseholdProvider, useHouseholds } from './contexts/HouseholdContext'
@@ -11,12 +11,18 @@ import HouseholdList from './components/HouseholdList'
 import HouseholdDetail from './components/HouseholdDetail'
 import ProjectDetail from './components/ProjectDetail'
 import ResidentProfile from './components/ResidentProfile'
+import ResidentListPage from './components/ResidentListPage'
+import ProjectListPage from './components/ProjectListPage'
 import ActivityFeed from './components/ActivityFeed'
 import ProfilePage from './components/ProfilePage'
 import UserDirectory from './components/UserDirectory'
 import AddListModal from './components/AddListModal'
 import ProjectListView from './components/ProjectListView'
 import CalendarPage from './components/CalendarPage'
+import TeamsPage from './components/TeamsPage'
+import MessagesPage from './components/MessagesPage'
+import GlobalSearch from './components/GlobalSearch'
+import QuickTaskModal from './components/QuickTaskModal'
 import LoginPage from './components/LoginPage'
 
 const GORMY = 'https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png'
@@ -35,6 +41,7 @@ function AppMain() {
   const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
   const [activeDomain,       setActiveDomain]       = useState('housing')
   const [showAddList,        setShowAddList]        = useState(false)
+  const [showQuickTask,      setShowQuickTask]      = useState(false)
   const [sidebarOpen,        setSidebarOpen]        = useState(false)
 
   // Default personal list selection once lists load
@@ -56,21 +63,25 @@ function AppMain() {
 
   function pageTitle() {
     switch (activeView) {
-      case 'dashboard':     return 'Dashboard'
-      case 'my-tasks':      return 'My Tasks'
-      case 'calendar':      return 'Calendar'
-      case 'personal-list': return lists.find(l => l.id === activeListId)?.name ?? 'List'
-      case 'project-list':  return activeDomain
+      case 'dashboard':        return 'Dashboard'
+      case 'my-tasks':         return 'My Tasks'
+      case 'calendar':         return 'Calendar'
+      case 'personal-list':    return lists.find(l => l.id === activeListId)?.name ?? 'List'
+      case 'project-list':     return activeDomain
           ? activeDomain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
           : 'Project Lists'
-      case 'household':      return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
-      case 'household-list': return 'Households'
-      case 'project':        return projects.find(p => p.id === activeProjectId)?.name ?? 'Project'
-      case 'resident':       return 'Resident'
-      case 'activity':       return 'Activity'
-      case 'profile':        return 'Profile'
-      case 'team':           return 'Team'
-      default:               return 'GormBase'
+      case 'household':        return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
+      case 'household-list':   return 'Households'
+      case 'resident-list':    return 'Residents'
+      case 'project-list-all': return 'Projects'
+      case 'project':          return projects.find(p => p.id === activeProjectId)?.name ?? 'Project'
+      case 'resident':         return 'Resident'
+      case 'activity':         return 'Activity'
+      case 'profile':          return 'Profile'
+      case 'team':             return 'Team'
+      case 'teams':            return 'Teams'
+      case 'messages':         return 'Messages'
+      default:                 return 'GormBase'
     }
   }
 
@@ -98,6 +109,14 @@ function AppMain() {
         )
       case 'household-list':
         return <HouseholdList onSelectHousehold={id => navigate('household', { householdId: id })} />
+      case 'resident-list':
+        return (
+          <ResidentListPage
+            onSelectResident={(residentId, householdId) => navigate('resident', { residentId, householdId })}
+          />
+        )
+      case 'project-list-all':
+        return <ProjectListPage navigate={navigate} />
       case 'project': {
         const project = projects.find(p => p.id === activeProjectId)
         return (
@@ -122,10 +141,12 @@ function AppMain() {
             onSelectProject={id => navigate('project', { projectId: id, householdId: activeHouseholdId })}
           />
         )
-      case 'activity': return <ActivityFeed />
-      case 'profile':  return <ProfilePage />
-      case 'team':     return <UserDirectory />
-      default:         return <Dashboard navigate={navigate} />
+      case 'activity':  return <ActivityFeed />
+      case 'profile':   return <ProfilePage />
+      case 'team':      return <UserDirectory />
+      case 'teams':     return <TeamsPage />
+      case 'messages':  return <MessagesPage />
+      default:          return <Dashboard navigate={navigate} />
     }
   }
 
@@ -150,6 +171,13 @@ function AppMain() {
         </button>
         <img src={GORMY} alt="" className="h-6 w-auto" />
         <span className="font-display text-base text-sage-800 flex-1 truncate">{pageTitle()}</span>
+        <button
+          onClick={() => setShowQuickTask(true)}
+          className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors shrink-0"
+        >
+          <Plus size={14} />
+          Task
+        </button>
       </div>
 
       {/* ── Mobile sidebar backdrop ─────────────────── */}
@@ -181,6 +209,19 @@ function AppMain() {
 
       {/* ── Main content ────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden pt-14 md:pt-0">
+        {/* Desktop top bar */}
+        <div className="hidden md:flex items-center gap-3 px-6 h-14 border-b border-sage-100 bg-white shrink-0">
+          <div className="flex-1">
+            <GlobalSearch navigate={navigate} />
+          </div>
+          <button
+            onClick={() => setShowQuickTask(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-sm shrink-0"
+          >
+            <Plus size={16} />
+            New Task
+          </button>
+        </div>
         {renderMain()}
       </div>
 
@@ -193,6 +234,10 @@ function AppMain() {
             setShowAddList(false)
           }}
         />
+      )}
+
+      {showQuickTask && (
+        <QuickTaskModal onClose={() => setShowQuickTask(false)} />
       )}
     </div>
   )

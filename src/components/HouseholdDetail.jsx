@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { useTasks } from '../contexts/TaskContext'
 import ResidentRegistrationModal from './ResidentRegistrationModal'
+import NotesPanel from './NotesPanel'
 
 const PROPERTY_TYPES = ['Single Family', 'Condo', 'Apartment', 'Townhouse', 'Group Home', 'Other']
 
@@ -235,7 +236,7 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-sage-100 mb-6">
-        {['details', 'residents', 'projects'].map(t => (
+        {['details', 'residents', 'projects', 'notes'].map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -459,6 +460,13 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Notes tab ── */}
+      {tab === 'notes' && (
+        <div className="max-w-2xl">
+          <NotesPanel entityType="household" entityId={householdId} allowSoap={false} />
         </div>
       )}
 

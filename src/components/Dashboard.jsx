@@ -25,13 +25,20 @@ function timeAgo(dateStr) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+function greeting() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
 export default function Dashboard({ navigate }) {
   const { currentUser, allUsers } = useAuth()
   const { tasks } = useTasks()
-  const { households, projects, activity } = useHouseholds()
+  const { households, projects, residents, activity } = useHouseholds()
   const [chartType, setChartType] = useState('bar')
 
-  const myOpen = tasks.filter(t => t.assignedTo === currentUser?.id && t.status !== 'done').length
+  const myOpen = tasks.filter(t => t.assignedTo === currentUser?.id && t.status !== 'done' && !t.archived).length
   const myDone = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === 'done').length
 
   // Per-user progress cards
@@ -66,17 +73,49 @@ export default function Dashboard({ navigate }) {
   // Recent activity — last 10 entries
   const recentActivity = activity.slice(0, 10)
 
+  const activeHouseholds = households.filter(h => !h.archived).length
+  const activeResidents = residents.filter(r => !r.archived).length
+  const activeProjects = projects.filter(p => !p.archived).length
+
   return (
     <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
-      {/* Welcome */}
+      {/* Personalized greeting */}
       <div className="mb-6 md:mb-8">
         <h2 className="font-display text-2xl text-sage-800">
-          Welcome back, {currentUser?.name ?? 'there'} 👋
+          {greeting()}, {currentUser?.name?.split(' ')[0] ?? 'there'} 👋
         </h2>
         <p className="text-sm text-sage-400 mt-1">
           {myOpen} open task{myOpen !== 1 ? 's' : ''} assigned to you
           {myDone > 0 && ` · ${myDone} completed`}
         </p>
+      </div>
+
+      {/* Navigation tiles */}
+      <div className="grid grid-cols-3 gap-3 mb-8">
+        <button
+          onClick={() => navigate('household-list')}
+          className="bg-white rounded-xl border border-sage-100 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl mb-2">🏠</p>
+          <p className="text-sm font-semibold text-sage-800">Households</p>
+          <p className="text-xs text-sage-400 mt-0.5">{activeHouseholds} active</p>
+        </button>
+        <button
+          onClick={() => navigate('resident-list')}
+          className="bg-white rounded-xl border border-sage-100 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl mb-2">👤</p>
+          <p className="text-sm font-semibold text-sage-800">Residents</p>
+          <p className="text-xs text-sage-400 mt-0.5">{activeResidents} active</p>
+        </button>
+        <button
+          onClick={() => navigate('project-list-all')}
+          className="bg-white rounded-xl border border-sage-100 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+        >
+          <p className="text-2xl mb-2">📋</p>
+          <p className="text-sm font-semibold text-sage-800">Projects</p>
+          <p className="text-xs text-sage-400 mt-0.5">{activeProjects} active</p>
+        </button>
       </div>
 
       {/* User progress cards */}

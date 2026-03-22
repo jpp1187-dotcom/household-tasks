@@ -64,7 +64,7 @@ export default function ProjectDetail({ projectId, onBack, allUsers }) {
             <>
               <span className="text-sage-300">›</span>
               <span className="text-sage-500 font-medium">
-                {resident.preferredName || `${resident.legalFirst} ${resident.legalLast}`}
+                {resident.preferredName || resident.legalName}
               </span>
             </>
           )}

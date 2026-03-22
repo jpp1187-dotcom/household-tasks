@@ -1,12 +1,14 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
-  LayoutDashboard, CheckSquare, List, Home, Activity, Users,
-  Plus, ChevronDown, ChevronRight, LogOut, UserCircle, X, Calendar,
+  LayoutDashboard, CheckSquare, List, Activity, Users,
+  Plus, ChevronDown, ChevronRight, LogOut, X, Calendar,
+  Star, MessageSquare, Search,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { DOMAIN_CONFIG } from './ProjectListView'
+import { getFavorites, removeFavorite, addFavorite } from '../lib/favorites'
 
 function SidebarAvatar({ name }) {
   const initials = (name ?? '?')
@@ -26,52 +28,44 @@ function SidebarAvatar({ name }) {
   )
 }
 
-// Small colored square for domain links
-function DomainDot({ color }) {
-  return (
-    <span className={`w-3 h-3 rounded-sm inline-block shrink-0 ${color}`} />
-  )
-}
-
 export default function Sidebar({
   activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId, activeDomain,
   navigate, onAddList, onClose,
 }) {
   const { currentUser, signOut, isAdmin } = useAuth()
   const { lists, tasks } = useTasks()
-  const { households, projects, residents, addHousehold } = useHouseholds()
+  const { households, residents } = useHouseholds()
 
   const [listsOpen, setListsOpen] = useState(true)
   const [projectListsOpen, setProjectListsOpen] = useState(true)
-  const [expandedHouseholds, setExpandedHouseholds] = useState(new Set())
-  const [addHouseholdName, setAddHouseholdName] = useState('')
-  const [showAddHousehold, setShowAddHousehold] = useState(false)
-  const [addHouseholdError, setAddHouseholdError] = useState('')
+  const [favorites, setFavorites] = useState([])
+  const [showPinSearch, setShowPinSearch] = useState(false)
+  const [pinSearch, setPinSearch] = useState('')
 
-  function toggleHousehold(id) {
-    setExpandedHouseholds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
+  // Load favorites on mount / user change
+  useEffect(() => {
+    if (!currentUser?.id) return
+    getFavorites(currentUser.id).then(setFavorites)
+  }, [currentUser?.id])
+
+  async function handleUnpin(entityType, entityId) {
+    await removeFavorite(currentUser.id, entityType, entityId)
+    setFavorites(prev => prev.filter(f => !(f.entity_type === entityType && f.entity_id === entityId)))
+  }
+
+  async function handlePin(entityType, entityId) {
+    await addFavorite(currentUser.id, entityType, entityId)
+    setFavorites(prev => {
+      const exists = prev.some(f => f.entity_type === entityType && f.entity_id === entityId)
+      if (exists) return prev
+      return [...prev, { entity_type: entityType, entity_id: entityId }]
     })
+    setShowPinSearch(false)
+    setPinSearch('')
   }
 
   function openTaskCount(listId) {
     return tasks.filter(t => t.listId === listId && t.status !== 'done' && !t.archived).length
-  }
-
-  async function handleAddHousehold(e) {
-    e.preventDefault()
-    if (!addHouseholdName.trim()) return
-    setAddHouseholdError('')
-    try {
-      await addHousehold({ name: addHouseholdName.trim() })
-      setAddHouseholdName('')
-      setShowAddHousehold(false)
-    } catch (err) {
-      setAddHouseholdError(err.message ?? 'Failed to add household.')
-    }
   }
 
   function navClass(active) {
@@ -79,10 +73,29 @@ export default function Sidebar({
       ${active ? 'bg-sage-100 text-sage-800' : 'text-sage-600 hover:bg-sage-50'}`
   }
 
-  // Personal lists: no householdId (or householdId is null)
   const personalLists = lists.filter(l => !l.householdId && !l.archived)
 
-  const activeHouseholds = households.filter(h => !h.archived)
+  // Build favorite items for display
+  const favItems = favorites.map(f => {
+    if (f.entity_type === 'resident') {
+      const r = residents.find(x => x.id === f.entity_id)
+      return r ? { ...f, label: r.preferredName || r.legalName, emoji: '👤', householdId: r.householdId } : null
+    }
+    if (f.entity_type === 'household') {
+      const h = households.find(x => x.id === f.entity_id)
+      return h ? { ...f, label: h.name, emoji: '🏠' } : null
+    }
+    return null
+  }).filter(Boolean)
+
+  // Pin search results
+  const pinQuery = pinSearch.toLowerCase().trim()
+  const pinResults = pinQuery ? [
+    ...households.filter(h => !h.archived && h.name.toLowerCase().includes(pinQuery))
+      .map(h => ({ type: 'household', id: h.id, label: h.name, emoji: '🏠' })),
+    ...residents.filter(r => !r.archived && (r.legalName.toLowerCase().includes(pinQuery) || (r.preferredName && r.preferredName.toLowerCase().includes(pinQuery))))
+      .map(r => ({ type: 'resident', id: r.id, label: r.preferredName || r.legalName, emoji: '👤' })),
+  ].slice(0, 6) : []
 
   return (
     <aside className="w-64 bg-white border-r border-sage-100 flex flex-col h-full shrink-0">
@@ -165,6 +178,73 @@ export default function Sidebar({
           </div>
         )}
 
+        {/* ── Favorites ────────────────────────────── */}
+        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">
+          <span className="flex items-center gap-1"><Star size={11} /> Favorites</span>
+        </p>
+
+        {favItems.map(f => (
+          <div key={`${f.entity_type}-${f.entity_id}`} className="flex items-center gap-1 mb-0.5 group">
+            <button
+              onClick={() => {
+                if (f.entity_type === 'resident') {
+                  navigate('resident', { residentId: f.entity_id, householdId: f.householdId })
+                } else {
+                  navigate('household', { householdId: f.entity_id })
+                }
+              }}
+              className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-sage-600 hover:bg-sage-50 transition-colors"
+            >
+              <span>{f.emoji}</span>
+              <span className="flex-1 truncate">{f.label}</span>
+            </button>
+            <button
+              onClick={() => handleUnpin(f.entity_type, f.entity_id)}
+              className="opacity-0 group-hover:opacity-100 p-1 text-sage-300 hover:text-sage-500 transition-all mr-1 shrink-0"
+              title="Unpin"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+
+        {/* Pin search */}
+        {showPinSearch ? (
+          <div className="px-1 mb-2">
+            <div className="relative">
+              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sage-400 pointer-events-none" />
+              <input
+                autoFocus
+                value={pinSearch}
+                onChange={e => setPinSearch(e.target.value)}
+                placeholder="Search to pin…"
+                className="w-full pl-7 pr-2 py-1.5 text-xs border border-sage-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-300"
+              />
+            </div>
+            {pinResults.length > 0 && (
+              <div className="mt-1 bg-white border border-sage-200 rounded-lg shadow-sm py-1">
+                {pinResults.map(r => (
+                  <button key={`${r.type}-${r.id}`} onClick={() => handlePin(r.type, r.id)}
+                    className="w-full text-left px-3 py-1.5 text-xs text-sage-700 hover:bg-sage-50 flex items-center gap-2">
+                    <span>{r.emoji}</span>
+                    <span className="truncate">{r.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => { setShowPinSearch(false); setPinSearch('') }}
+              className="text-xs text-sage-400 hover:text-sage-600 px-2 mt-1">Cancel</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowPinSearch(true)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-sage-400 hover:text-sage-600 hover:bg-sage-50 transition-colors mb-1"
+          >
+            <Plus size={11} />
+            <span>Pin a resident or household</span>
+          </button>
+        )}
+
         {/* ── Project Lists ────────────────────────── */}
         <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Project Lists</p>
 
@@ -187,107 +267,23 @@ export default function Sidebar({
                     ? 'bg-sage-100 text-sage-800 font-medium'
                     : 'text-sage-500 hover:bg-sage-50'}`}
               >
-                <DomainDot color={cfg.color} />
+                <span className="text-sm leading-none">{cfg.icon}</span>
                 <span className="truncate">{cfg.label}</span>
               </button>
             ))}
           </div>
         )}
 
-        {/* ── Households ──────────────────────────── */}
-        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Households</p>
-
-        {activeHouseholds.map(h => {
-          const hExpanded = expandedHouseholds.has(h.id)
-          const hProjects = projects.filter(p => p.householdId === h.id && !p.residentId && !p.archived)
-          return (
-            <div key={h.id}>
-              <div className="flex items-center mb-0.5">
-                <button
-                  onClick={() => navigate('household', { householdId: h.id })}
-                  className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-l-lg text-sm font-medium transition-colors
-                    ${activeView === 'household' && activeHouseholdId === h.id
-                      ? 'bg-sage-100 text-sage-800'
-                      : 'text-sage-600 hover:bg-sage-50'}`}
-                >
-                  <Home size={15} />
-                  <span className="flex-1 text-left truncate">{h.name}</span>
-                </button>
-                <button
-                  onClick={() => toggleHousehold(h.id)}
-                  className="px-2 py-2 text-sage-400 hover:text-sage-600 hover:bg-sage-50 rounded-r-lg transition-colors"
-                  title={hExpanded ? 'Collapse' : 'Expand'}
-                >
-                  {hExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-              </div>
-
-              {hExpanded && (
-                <div className="ml-8 mb-1">
-                  <button
-                    onClick={() => navigate('household', { householdId: h.id, tab: 'residents' })}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-0.5 text-sage-500 hover:bg-sage-50 transition-colors"
-                  >
-                    <UserCircle size={12} className="text-sage-400" />
-                    <span className="truncate">
-                      Residents ({residents.filter(r => r.householdId === h.id && !r.archived).length})
-                    </span>
-                  </button>
-
-                  {hProjects.map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => navigate('project', { projectId: p.id, householdId: h.id })}
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-0.5 transition-colors
-                        ${activeView === 'project' && activeProjectId === p.id
-                          ? 'bg-sage-100 text-sage-800 font-medium'
-                          : 'text-sage-500 hover:bg-sage-50'}`}
-                    >
-                      <span className="text-sage-400">📋</span>
-                      <span className="truncate">{p.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {/* Add household */}
-        {isAdmin() && !showAddHousehold && (
-          <button
-            onClick={() => setShowAddHousehold(true)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-sage-400 hover:text-sage-600 hover:bg-sage-50 transition-colors mt-0.5"
-          >
-            <Plus size={14} />
-            <span>Add household</span>
-          </button>
-        )}
-
-        {showAddHousehold && (
-          <form onSubmit={handleAddHousehold} className="mt-1 px-1">
-            <input
-              autoFocus
-              value={addHouseholdName}
-              onChange={e => setAddHouseholdName(e.target.value)}
-              placeholder="Household name…"
-              className="w-full text-xs border border-sage-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-sage-300 mb-1"
-            />
-            {addHouseholdError && <p className="text-xs text-red-500 mb-1">{addHouseholdError}</p>}
-            <div className="flex gap-1">
-              <button type="submit" className="flex-1 text-xs py-1 bg-sage-600 text-white rounded-lg font-semibold hover:bg-sage-700">Add</button>
-              <button type="button" onClick={() => { setShowAddHousehold(false); setAddHouseholdError('') }}
-                className="px-2 text-xs text-sage-400 hover:text-sage-600">✕</button>
-            </div>
-          </form>
-        )}
-
         {/* ── More ──────────────────────────────────── */}
         <div className="mt-4">
           <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1">More</p>
-          <button onClick={() => navigate('team')} className={navClass(activeView === 'team')}>
+          <button onClick={() => navigate('messages')} className={navClass(activeView === 'messages')}>
+            <MessageSquare size={16} />
+            <span>Messages</span>
+          </button>
+          <button onClick={() => navigate('teams')} className={navClass(activeView === 'teams')}>
             <Users size={16} />
-            <span>Team</span>
+            <span>Teams</span>
           </button>
           <button onClick={() => navigate('activity')} className={navClass(activeView === 'activity')}>
             <Activity size={16} />
