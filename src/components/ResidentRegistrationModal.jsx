@@ -3,11 +3,12 @@ import { X, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react'
 import { useHouseholds } from '../contexts/HouseholdContext'
 
 const PROJECT_TYPES = [
-  { value: 'medicaid',   label: '🏥 Medicaid' },
-  { value: 'housing',    label: '🏠 Housing' },
-  { value: 'employment', label: '💼 Employment' },
-  { value: 'benefits',   label: '📋 Benefits' },
-  { value: 'other',      label: '📁 Other' },
+  { value: 'housing',           label: '🏠 Housing' },
+  { value: 'clinical',          label: '🏥 Clinical' },
+  { value: 'behavioral_health', label: '🧠 Behavioral Health' },
+  { value: 'justice',           label: '⚖️ Justice' },
+  { value: 'care_coordination', label: '🤝 Care Coordination' },
+  { value: 'benefits',          label: '📋 Benefits' },
 ]
 
 const STEPS = ['Identity', 'Contact', 'Identifiers & Projects']

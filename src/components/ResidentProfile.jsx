@@ -1,10 +1,9 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Eye, EyeOff, Edit2 } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Edit2, MoreVertical, Archive, Trash2, RotateCcw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { useTasks } from '../contexts/TaskContext'
 import ResidentRegistrationModal from './ResidentRegistrationModal'
-import TaskCard from './TaskCard'
 
 const STATUS_COLS = ['todo', 'in_progress', 'done']
 const STATUS_LABELS = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' }
@@ -28,16 +27,38 @@ function InfoRow({ label, value }) {
   )
 }
 
+function ConfirmModal({ name, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <h3 className="font-display text-lg text-sage-800 mb-2">Delete project?</h3>
+        <p className="text-sm text-sage-600 mb-1">"{name}"</p>
+        <p className="text-sm text-sage-400 mb-6">This cannot be undone. All tasks will be deleted.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 px-4 py-2 text-sm border border-sage-200 rounded-xl text-sage-600 hover:bg-sage-50">Cancel</button>
+          <button onClick={onConfirm} className="flex-1 px-4 py-2 text-sm bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600">Delete</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ResidentProfile({ residentId, onBack, onSelectProject }) {
   const { isAdmin } = useAuth()
-  const { residents, projects, households } = useHouseholds()
+  const { residents, projects, households, archiveProject, restoreProject, deleteProject } = useHouseholds()
   const { tasks } = useTasks()
   const [showSensitive, setShowSensitive] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [showArchivedProjects, setShowArchivedProjects] = useState(false)
 
   const resident = residents.find(r => r.id === residentId)
   const household = resident ? households.find(h => h.id === resident.householdId) : null
-  const residentProjects = projects.filter(p => p.residentId === residentId)
+  const allResidentProjects = projects.filter(p => p.residentId === residentId)
+  const residentProjects = showArchivedProjects
+    ? allResidentProjects
+    : allResidentProjects.filter(p => !p.archived)
+  const archivedCount = allResidentProjects.filter(p => p.archived).length
 
   if (!resident) return <div className="p-8 text-sage-400">Resident not found.</div>
 
@@ -46,12 +67,8 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
     : resident.legalName
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-8 max-w-3xl">
-      {/* Back breadcrumb */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1 text-xs text-sage-400 hover:text-sage-600 mb-4"
-      >
+    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-3xl">
+      <button onClick={onBack} className="flex items-center gap-1 text-xs text-sage-400 hover:text-sage-600 mb-4">
         <ArrowLeft size={14} />
         {household?.name ?? 'Back'}
       </button>
@@ -60,7 +77,6 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
       <div className="flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-3">
-            {/* Initials avatar */}
             <div className="w-12 h-12 rounded-full bg-sage-200 flex items-center justify-center text-lg font-semibold text-sage-700 shrink-0">
               {(() => {
                 const words = (resident.legalName ?? '').trim().split(/\s+/)
@@ -78,10 +94,8 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
           </div>
         </div>
         {isAdmin() && (
-          <button
-            onClick={() => setShowEditModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-sage-200 rounded-xl text-sage-600 hover:bg-sage-50 transition-colors"
-          >
+          <button onClick={() => setShowEditModal(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-sage-200 rounded-xl text-sage-600 hover:bg-sage-50 transition-colors">
             <Edit2 size={14} />
             Edit
           </button>
@@ -138,7 +152,21 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
       </div>
 
       {/* Projects — mini kanban */}
-      <Section title="Projects">
+      <div className="bg-white rounded-xl border border-sage-100 shadow-sm p-5 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-semibold text-sage-400 uppercase tracking-widest">Projects</h3>
+          <div className="flex items-center gap-2">
+            {archivedCount > 0 && (
+              <button
+                onClick={() => setShowArchivedProjects(v => !v)}
+                className="text-xs text-sage-400 hover:text-sage-600 transition-colors"
+              >
+                {showArchivedProjects ? 'Hide archived' : `+${archivedCount} archived`}
+              </button>
+            )}
+          </div>
+        </div>
+
         {residentProjects.length === 0 ? (
           <p className="text-xs text-sage-300">No projects yet.</p>
         ) : (
@@ -148,24 +176,39 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
             const pct = pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0
 
             return (
-              <div key={project.id} className="mb-6 last:mb-0">
+              <div key={project.id} className={`mb-6 last:mb-0 ${project.archived ? 'opacity-60' : ''}`}>
                 <div className="flex items-center justify-between mb-2">
                   <button
-                    onClick={() => onSelectProject?.(project.id)}
+                    onClick={() => !project.archived && onSelectProject?.(project.id)}
                     className="text-sm font-semibold text-sage-700 hover:text-sage-900 transition-colors text-left"
                   >
                     {project.name}
+                    {project.archived && (
+                      <span className="ml-2 text-xs font-normal text-sage-400">(archived)</span>
+                    )}
                   </button>
-                  <span className={`text-xs px-2 py-0.5 rounded-full capitalize
-                    ${project.status === 'active'    ? 'bg-sage-100 text-sage-600' :
-                      project.status === 'completed' ? 'bg-green-50 text-green-600' :
-                                                       'bg-gray-100 text-gray-500'}`}
-                  >
-                    {project.status}
-                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full capitalize
+                      ${project.status === 'active'    ? 'bg-sage-100 text-sage-600' :
+                        project.status === 'completed' ? 'bg-green-50 text-green-600' :
+                                                         'bg-gray-100 text-gray-500'}`}
+                    >
+                      {project.status}
+                    </span>
+                    {/* Three-dot menu for project */}
+                    <div className="relative" onClick={e => e.stopPropagation()}>
+                      <ProjectMenu
+                        project={project}
+                        onArchive={() => archiveProject(project.id)}
+                        onRestore={() => restoreProject(project.id)}
+                        onDelete={() => setConfirmDelete({ id: project.id, name: project.name })}
+                        isAdmin={isAdmin()}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {/* Progress bar */}
                 <div className="flex items-center gap-2 mb-3">
                   <div className="flex-1 h-1.5 bg-sage-100 rounded-full overflow-hidden">
                     <div className="h-full bg-sage-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -173,7 +216,6 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
                   <span className="text-xs text-sage-400 shrink-0">{done}/{pTasks.length}</span>
                 </div>
 
-                {/* Mini kanban columns */}
                 {pTasks.length > 0 && (
                   <div className="grid grid-cols-3 gap-2">
                     {STATUS_COLS.map(col => {
@@ -204,7 +246,7 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
             )
           })
         )}
-      </Section>
+      </div>
 
       {showEditModal && (
         <ResidentRegistrationModal
@@ -214,6 +256,50 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
           onSaved={() => setShowEditModal(false)}
         />
       )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          name={confirmDelete.name}
+          onConfirm={() => { deleteProject(confirmDelete.id); setConfirmDelete(null) }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
+  )
+}
+
+function ProjectMenu({ project, onArchive, onRestore, onDelete, isAdmin }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(v => !v)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="p-1 text-sage-300 hover:text-sage-600 rounded transition-colors"
+      >
+        <MoreVertical size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 bg-white border border-sage-200 rounded-xl shadow-lg py-1 min-w-36">
+          {project.archived ? (
+            <button onClick={() => { onRestore(); setOpen(false) }}
+              className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50 flex items-center gap-2">
+              <RotateCcw size={13} /> Restore
+            </button>
+          ) : (
+            <button onClick={() => { onArchive(); setOpen(false) }}
+              className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50 flex items-center gap-2">
+              <Archive size={13} /> Archive
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => { onDelete(); setOpen(false) }}
+              className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">
+              <Trash2 size={13} /> Delete
+            </button>
+          )}
+        </div>
+      )}
+    </>
   )
 }

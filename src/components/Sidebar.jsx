@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import {
   LayoutDashboard, CheckSquare, List, Home, Activity, Users,
-  Plus, ChevronDown, ChevronRight, LogOut, UserCircle, X,
+  Plus, ChevronDown, ChevronRight, LogOut, UserCircle, X, Calendar,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
+import { DOMAIN_CONFIG } from './ProjectListView'
 
 function SidebarAvatar({ name }) {
   const initials = (name ?? '?')
@@ -25,8 +26,15 @@ function SidebarAvatar({ name }) {
   )
 }
 
+// Small colored square for domain links
+function DomainDot({ color }) {
+  return (
+    <span className={`w-3 h-3 rounded-sm inline-block shrink-0 ${color}`} />
+  )
+}
+
 export default function Sidebar({
-  activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId,
+  activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId, activeDomain,
   navigate, onAddList, onClose,
 }) {
   const { currentUser, signOut, isAdmin } = useAuth()
@@ -34,6 +42,7 @@ export default function Sidebar({
   const { households, projects, residents, addHousehold } = useHouseholds()
 
   const [listsOpen, setListsOpen] = useState(true)
+  const [projectListsOpen, setProjectListsOpen] = useState(true)
   const [expandedHouseholds, setExpandedHouseholds] = useState(new Set())
   const [addHouseholdName, setAddHouseholdName] = useState('')
   const [showAddHousehold, setShowAddHousehold] = useState(false)
@@ -49,7 +58,7 @@ export default function Sidebar({
   }
 
   function openTaskCount(listId) {
-    return tasks.filter(t => t.listId === listId && t.status !== 'done').length
+    return tasks.filter(t => t.listId === listId && t.status !== 'done' && !t.archived).length
   }
 
   async function handleAddHousehold(e) {
@@ -70,9 +79,14 @@ export default function Sidebar({
       ${active ? 'bg-sage-100 text-sage-800' : 'text-sage-600 hover:bg-sage-50'}`
   }
 
+  // Personal lists: no householdId (or householdId is null)
+  const personalLists = lists.filter(l => !l.householdId && !l.archived)
+
+  const activeHouseholds = households.filter(h => !h.archived)
+
   return (
     <aside className="w-64 bg-white border-r border-sage-100 flex flex-col h-full shrink-0">
-      {/* Logo + App name + mobile close button */}
+      {/* Logo */}
       <div className="px-6 pt-7 pb-4 flex items-center gap-2.5">
         <img
           src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png"
@@ -83,23 +97,17 @@ export default function Sidebar({
           <h1 className="font-display text-xl text-sage-800 leading-tight">GormBase</h1>
           <p className="text-xs text-sage-400 leading-tight">Your household, organized.</p>
         </div>
-        {/* X button — mobile only */}
         {onClose && (
-          <button
-            onClick={onClose}
-            className="md:hidden text-sage-400 hover:text-sage-600 transition-colors -mr-1"
-            aria-label="Close menu"
-          >
+          <button onClick={onClose} className="md:hidden text-sage-400 hover:text-sage-600 transition-colors -mr-1" aria-label="Close menu">
             <X size={18} />
           </button>
         )}
       </div>
 
       <nav className="flex-1 px-3 overflow-y-auto pb-2">
-        {/* ── General ───────────────────────────────── */}
-        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-2">
-          General
-        </p>
+
+        {/* ── General ─────────────────────────────── */}
+        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-2">General</p>
 
         <button onClick={() => navigate('dashboard')} className={navClass(activeView === 'dashboard')}>
           <LayoutDashboard size={16} />
@@ -111,26 +119,31 @@ export default function Sidebar({
           <span>My Tasks</span>
         </button>
 
-        {/* Quick Lists — collapsible */}
+        <button onClick={() => navigate('calendar')} className={navClass(activeView === 'calendar')}>
+          <Calendar size={16} />
+          <span>Calendar</span>
+        </button>
+
+        {/* Personal Lists — collapsible */}
         <button
           onClick={() => setListsOpen(v => !v)}
-          className={navClass(activeView === 'quick-list')}
+          className={navClass(activeView === 'personal-list')}
         >
           <List size={16} />
-          <span className="flex-1 text-left">Quick Lists</span>
+          <span className="flex-1 text-left">Personal Lists</span>
           {listsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
 
         {listsOpen && (
           <div className="ml-6 mb-1">
-            {lists.map(list => {
+            {personalLists.map(list => {
               const open = openTaskCount(list.id)
               return (
                 <button
                   key={list.id}
-                  onClick={() => navigate('quick-list', { listId: list.id })}
+                  onClick={() => navigate('personal-list', { listId: list.id })}
                   className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
-                    ${activeView === 'quick-list' && activeListId === list.id
+                    ${activeView === 'personal-list' && activeListId === list.id
                       ? 'bg-sage-100 text-sage-800 font-medium'
                       : 'text-sage-500 hover:bg-sage-50'}`}
                 >
@@ -143,10 +156,8 @@ export default function Sidebar({
               )
             })}
             {isAdmin() && (
-              <button
-                onClick={onAddList}
-                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-sage-400 hover:text-sage-600 hover:bg-sage-50 transition-colors"
-              >
+              <button onClick={onAddList}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-sage-400 hover:text-sage-600 hover:bg-sage-50 transition-colors">
                 <Plus size={13} />
                 <span>New list</span>
               </button>
@@ -154,14 +165,41 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* ── Households ────────────────────────────── */}
-        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">
-          Households
-        </p>
+        {/* ── Project Lists ────────────────────────── */}
+        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Project Lists</p>
 
-        {households.map(h => {
+        <button
+          onClick={() => setProjectListsOpen(v => !v)}
+          className="w-full flex items-center gap-3 px-3 py-1 rounded-lg text-sm text-sage-500 hover:bg-sage-50 transition-colors mb-0.5"
+        >
+          <span className="flex-1 text-left text-xs text-sage-400">By domain</span>
+          {projectListsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </button>
+
+        {projectListsOpen && (
+          <div className="ml-2 mb-1">
+            {Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => (
+              <button
+                key={key}
+                onClick={() => navigate('project-list', { domain: key })}
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
+                  ${activeView === 'project-list' && activeDomain === key
+                    ? 'bg-sage-100 text-sage-800 font-medium'
+                    : 'text-sage-500 hover:bg-sage-50'}`}
+              >
+                <DomainDot color={cfg.color} />
+                <span className="truncate">{cfg.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Households ──────────────────────────── */}
+        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Households</p>
+
+        {activeHouseholds.map(h => {
           const hExpanded = expandedHouseholds.has(h.id)
-          const hProjects = projects.filter(p => p.householdId === h.id)
+          const hProjects = projects.filter(p => p.householdId === h.id && !p.residentId && !p.archived)
           return (
             <div key={h.id}>
               <div className="flex items-center mb-0.5">
@@ -184,7 +222,6 @@ export default function Sidebar({
                 </button>
               </div>
 
-              {/* Sub-links: Residents + Projects */}
               {hExpanded && (
                 <div className="ml-8 mb-1">
                   <button
@@ -193,7 +230,7 @@ export default function Sidebar({
                   >
                     <UserCircle size={12} className="text-sage-400" />
                     <span className="truncate">
-                      Residents ({residents.filter(r => r.householdId === h.id).length})
+                      Residents ({residents.filter(r => r.householdId === h.id && !r.archived).length})
                     </span>
                   </button>
 
@@ -236,25 +273,16 @@ export default function Sidebar({
               placeholder="Household name…"
               className="w-full text-xs border border-sage-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-sage-300 mb-1"
             />
-            {addHouseholdError && (
-              <p className="text-xs text-red-500 mb-1">{addHouseholdError}</p>
-            )}
+            {addHouseholdError && <p className="text-xs text-red-500 mb-1">{addHouseholdError}</p>}
             <div className="flex gap-1">
-              <button type="submit" className="flex-1 text-xs py-1 bg-sage-600 text-white rounded-lg font-semibold hover:bg-sage-700">
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowAddHousehold(false); setAddHouseholdError('') }}
-                className="px-2 text-xs text-sage-400 hover:text-sage-600"
-              >
-                ✕
-              </button>
+              <button type="submit" className="flex-1 text-xs py-1 bg-sage-600 text-white rounded-lg font-semibold hover:bg-sage-700">Add</button>
+              <button type="button" onClick={() => { setShowAddHousehold(false); setAddHouseholdError('') }}
+                className="px-2 text-xs text-sage-400 hover:text-sage-600">✕</button>
             </div>
           </form>
         )}
 
-        {/* ── More ─────────────────────────────────── */}
+        {/* ── More ──────────────────────────────────── */}
         <div className="mt-4">
           <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1">More</p>
           <button onClick={() => navigate('team')} className={navClass(activeView === 'team')}>
@@ -268,21 +296,16 @@ export default function Sidebar({
         </div>
       </nav>
 
-      {/* ── Bottom: user profile link ─────────────── */}
+      {/* ── Bottom: user profile link ────────────── */}
       <div className="px-3 pb-5 pt-3 border-t border-sage-100">
         <div className="flex items-center gap-2">
-          {/* Clicking anywhere on the user row navigates to Profile */}
           <button
             onClick={() => navigate('profile')}
             className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-lg min-w-0 transition-colors
               ${activeView === 'profile' ? 'bg-sage-100' : 'hover:bg-sage-50'}`}
           >
             {currentUser?.avatar_url ? (
-              <img
-                src={currentUser.avatar_url}
-                alt=""
-                className="w-7 h-7 rounded-full object-cover shrink-0"
-              />
+              <img src={currentUser.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
             ) : (
               <SidebarAvatar name={currentUser?.name ?? currentUser?.email} />
             )}
@@ -293,11 +316,7 @@ export default function Sidebar({
               <p className="text-xs text-sage-400 capitalize">{currentUser?.role}</p>
             </div>
           </button>
-          <button
-            onClick={signOut}
-            title="Sign out"
-            className="text-sage-300 hover:text-sage-600 transition-colors p-1 shrink-0"
-          >
+          <button onClick={signOut} title="Sign out" className="text-sage-300 hover:text-sage-600 transition-colors p-1 shrink-0">
             <LogOut size={15} />
           </button>
         </div>

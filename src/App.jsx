@@ -15,6 +15,8 @@ import ActivityFeed from './components/ActivityFeed'
 import ProfilePage from './components/ProfilePage'
 import UserDirectory from './components/UserDirectory'
 import AddListModal from './components/AddListModal'
+import ProjectListView from './components/ProjectListView'
+import CalendarPage from './components/CalendarPage'
 import LoginPage from './components/LoginPage'
 
 const GORMY = 'https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png'
@@ -31,10 +33,11 @@ function AppMain() {
   const [activeProjectId,    setActiveProjectId]    = useState(null)
   const [activeResidentId,   setActiveResidentId]   = useState(null)
   const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
+  const [activeDomain,       setActiveDomain]       = useState('housing')
   const [showAddList,        setShowAddList]        = useState(false)
   const [sidebarOpen,        setSidebarOpen]        = useState(false)
 
-  // Default quick-list selection once lists load
+  // Default personal list selection once lists load
   useEffect(() => {
     if (!activeListId && lists.length > 0) setActiveListId(lists[0].id)
   }, [lists])
@@ -45,17 +48,21 @@ function AppMain() {
     if (params.householdId !== undefined) setActiveHouseholdId(params.householdId)
     if (params.projectId   !== undefined) setActiveProjectId(params.projectId)
     if (params.residentId  !== undefined) setActiveResidentId(params.residentId)
+    if (params.domain      !== undefined) setActiveDomain(params.domain)
     if (params.tab         !== undefined) setActiveHouseholdTab(params.tab)
     else if (view === 'household')        setActiveHouseholdTab('details')
-    setSidebarOpen(false) // close mobile sidebar on any navigation
+    setSidebarOpen(false)
   }
 
-  // Derive page title for the mobile top bar
   function pageTitle() {
     switch (activeView) {
-      case 'dashboard':      return 'Dashboard'
-      case 'my-tasks':       return 'My Tasks'
-      case 'quick-list':     return lists.find(l => l.id === activeListId)?.name ?? 'List'
+      case 'dashboard':     return 'Dashboard'
+      case 'my-tasks':      return 'My Tasks'
+      case 'calendar':      return 'Calendar'
+      case 'personal-list': return lists.find(l => l.id === activeListId)?.name ?? 'List'
+      case 'project-list':  return activeDomain
+          ? activeDomain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          : 'Project Lists'
       case 'household':      return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
       case 'household-list': return 'Households'
       case 'project':        return projects.find(p => p.id === activeProjectId)?.name ?? 'Project'
@@ -73,8 +80,12 @@ function AppMain() {
         return <Dashboard navigate={navigate} />
       case 'my-tasks':
         return <MyTasks />
-      case 'quick-list':
+      case 'calendar':
+        return <CalendarPage />
+      case 'personal-list':
         return <TaskList listId={activeListId} />
+      case 'project-list':
+        return <ProjectListView domain={activeDomain} navigate={navigate} />
       case 'household':
         return (
           <HouseholdDetail
@@ -128,7 +139,7 @@ function AppMain() {
         </div>
       )}
 
-      {/* ── Mobile top navbar ─────────────────────────────────────────── */}
+      {/* ── Mobile top navbar ──────────────────────── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-white border-b border-sage-100 flex items-center px-4 gap-3">
         <button
           onClick={() => setSidebarOpen(true)}
@@ -141,15 +152,12 @@ function AppMain() {
         <span className="font-display text-base text-sage-800 flex-1 truncate">{pageTitle()}</span>
       </div>
 
-      {/* ── Mobile sidebar backdrop ───────────────────────────────────── */}
+      {/* ── Mobile sidebar backdrop ─────────────────── */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ── Sidebar (overlay on mobile, inline on desktop) ────────────── */}
+      {/* ── Sidebar ─────────────────────────────────── */}
       <div
         className={`
           fixed inset-y-0 left-0 z-40
@@ -164,13 +172,14 @@ function AppMain() {
           activeHouseholdId={activeHouseholdId}
           activeProjectId={activeProjectId}
           activeResidentId={activeResidentId}
+          activeDomain={activeDomain}
           navigate={navigate}
           onAddList={() => setShowAddList(true)}
           onClose={() => setSidebarOpen(false)}
         />
       </div>
 
-      {/* ── Main content ──────────────────────────────────────────────── */}
+      {/* ── Main content ────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden pt-14 md:pt-0">
         {renderMain()}
       </div>
@@ -180,7 +189,7 @@ function AppMain() {
           onClose={() => setShowAddList(false)}
           onCreated={id => {
             setActiveListId(id)
-            setActiveView('quick-list')
+            setActiveView('personal-list')
             setShowAddList(false)
           }}
         />
@@ -189,7 +198,7 @@ function AppMain() {
   )
 }
 
-// ── Auth gate ─────────────────────────────────────────────────────────────────
+// ── Auth gate ──────────────────────────────────────────────────────────────────
 function AppShell() {
   const { currentUser, loading } = useAuth()
 

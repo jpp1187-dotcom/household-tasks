@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, ArrowLeft, Save } from 'lucide-react'
+import { Plus, ArrowLeft, Save, MoreVertical, Archive, Trash2, RotateCcw } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { useTasks } from '../contexts/TaskContext'
@@ -28,8 +28,60 @@ function TextInput({ value, onChange, placeholder = '' }) {
   )
 }
 
+function ConfirmModal({ entityType, name, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <h3 className="font-display text-lg text-sage-800 mb-2">Delete {entityType}?</h3>
+        <p className="text-sm text-sage-600 mb-1">"{name}"</p>
+        <p className="text-sm text-sage-400 mb-6">This cannot be undone. All associated records will be deleted.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 px-4 py-2 text-sm border border-sage-200 rounded-xl text-sage-600 hover:bg-sage-50">Cancel</button>
+          <button onClick={onConfirm} className="flex-1 px-4 py-2 text-sm bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600">Delete</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ThreeDotMenu({ archived, onArchive, onRestore, onDelete, isAdmin }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="p-1 text-sage-300 hover:text-sage-600 rounded transition-colors"
+      >
+        <MoreVertical size={15} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-7 z-20 bg-white border border-sage-200 rounded-xl shadow-lg py-1 min-w-36">
+          {archived ? (
+            <button onClick={() => { onRestore(); setOpen(false) }}
+              className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50 flex items-center gap-2">
+              <RotateCcw size={13} /> Restore
+            </button>
+          ) : (
+            <button onClick={() => { onArchive(); setOpen(false) }}
+              className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50 flex items-center gap-2">
+              <Archive size={13} /> Archive
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => { onDelete(); setOpen(false) }}
+              className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">
+              <Trash2 size={13} /> Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Resident card in the Residents tab
-function ResidentCard({ resident, projects, onClick }) {
+function ResidentCard({ resident, projects, onClick, onArchive, onRestore, onDelete, isAdmin }) {
   const residentProjects = projects.filter(p => p.residentId === resident.id)
   const displayName = resident.preferredName || resident.legalName
   const words = (resident.legalName ?? '').trim().split(/\s+/)
@@ -38,66 +90,86 @@ function ResidentCard({ resident, projects, onClick }) {
     : (words[0]?.[0] ?? '?').toUpperCase()
 
   return (
-    <button
-      onClick={onClick}
-      className="bg-white rounded-xl border border-sage-100 shadow-sm p-4 text-left hover:shadow-md transition-shadow w-full"
+    <div className={`relative bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow
+      ${resident.archived ? 'opacity-60 border-sage-200' : 'border-sage-100'}`}
     >
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 rounded-full bg-sage-200 flex items-center justify-center text-sm font-semibold text-sage-700 shrink-0">
-          {initials}
+      <div className="absolute top-3 right-3 z-10">
+        <ThreeDotMenu
+          archived={resident.archived}
+          onArchive={onArchive}
+          onRestore={onRestore}
+          onDelete={onDelete}
+          isAdmin={isAdmin}
+        />
+      </div>
+      <button
+        onClick={() => !resident.archived && onClick()}
+        className="w-full text-left p-4 pr-12"
+      >
+        {resident.archived && (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-sage-100 text-sage-500 rounded-full mb-2">
+            <Archive size={10} /> Archived
+          </span>
+        )}
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-full bg-sage-200 flex items-center justify-center text-sm font-semibold text-sage-700 shrink-0">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-sage-800 truncate">{displayName}</p>
+            {resident.preferredName && (
+              <p className="text-xs text-sage-400 truncate">{resident.legalName}</p>
+            )}
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-sage-800 truncate">{displayName}</p>
-          {resident.preferredName && (
-            <p className="text-xs text-sage-400 truncate">{resident.legalName}</p>
+
+        <div className="flex flex-wrap gap-1 text-xs mb-1">
+          {resident.primaryLanguage && (
+            <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.primaryLanguage}</span>
+          )}
+          {resident.genderIdentity && (
+            <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.genderIdentity}</span>
           )}
         </div>
-      </div>
 
-      <div className="flex flex-wrap gap-1 text-xs mb-1">
-        {resident.primaryLanguage && (
-          <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.primaryLanguage}</span>
+        {residentProjects.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {residentProjects.map(p => (
+              <span key={p.id} className="text-xs px-2 py-0.5 bg-clay-50 text-clay-600 border border-clay-200 rounded-full">
+                {p.projectType || p.name}
+              </span>
+            ))}
+          </div>
         )}
-        {resident.genderIdentity && (
-          <span className="px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full">{resident.genderIdentity}</span>
-        )}
-      </div>
-
-      {residentProjects.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {residentProjects.map(p => (
-            <span key={p.id} className="text-xs px-2 py-0.5 bg-clay-50 text-clay-600 border border-clay-200 rounded-full">
-              {p.projectType || p.name}
-            </span>
-          ))}
-        </div>
-      )}
-    </button>
+      </button>
+    </div>
   )
 }
 
 export default function HouseholdDetail({ householdId, initialTab = 'details', onBack, onSelectProject, onSelectResident }) {
   const { isAdmin } = useAuth()
-  const { households, projects, residents, updateHousehold, addProject } = useHouseholds()
+  const { households, projects, residents, updateHousehold, addProject,
+          archiveProject, restoreProject, deleteProject,
+          archiveResident, restoreResident, deleteResident } = useHouseholds()
   const { tasks } = useTasks()
 
   const [tab, setTab] = useState(initialTab)
-
-  // Sync tab when parent navigates to a specific tab (e.g. Sidebar "Residents" link)
   React.useEffect(() => { setTab(initialTab) }, [initialTab])
+
   const [showAddProject, setShowAddProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [showAddResident, setShowAddResident] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState(null)
+  const [showArchivedResidents, setShowArchivedResidents] = useState(false)
+  const [showArchivedProjects, setShowArchivedProjects] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null) // { type, id, name }
 
   const household = households.find(h => h.id === householdId)
-  const hProjects = projects.filter(p => p.householdId === householdId && !p.residentId)
+  const hProjects  = projects.filter(p => p.householdId === householdId && !p.residentId)
   const hResidents = residents.filter(r => r.householdId === householdId)
 
   const [form, setForm] = useState(null)
-
-  // (Re-)initialise form when household loads or when navigating to a different household
   React.useEffect(() => {
     if (household) {
       setForm({
@@ -146,17 +218,17 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
 
   if (!household) return <div className="p-8 text-sage-400">Household not found.</div>
 
+  const visibleResidents = showArchivedResidents ? hResidents : hResidents.filter(r => !r.archived)
+  const visibleProjects  = showArchivedProjects  ? hProjects  : hProjects.filter(p => !p.archived)
+  const archivedResidentCount = hResidents.filter(r => r.archived).length
+  const archivedProjectCount  = hProjects.filter(p => p.archived).length
+
   return (
     <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-8 pb-24 md:pb-8">
-      {/* Back */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1 text-xs text-sage-400 hover:text-sage-600 mb-4"
-      >
+      <button onClick={onBack} className="flex items-center gap-1 text-xs text-sage-400 hover:text-sage-600 mb-4">
         <ArrowLeft size={14} /> All Households
       </button>
 
-      {/* Page title */}
       <div className="flex items-start justify-between mb-5">
         <h2 className="font-display text-2xl text-sage-800">{household.name}</h2>
       </div>
@@ -168,11 +240,9 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px
-              ${tab === t
-                ? 'text-sage-800 border-sage-600'
-                : 'text-sage-400 border-transparent hover:text-sage-600'}`}
+              ${tab === t ? 'text-sage-800 border-sage-600' : 'text-sage-400 border-transparent hover:text-sage-600'}`}
           >
-            {t === 'residents' ? `Residents (${hResidents.length})` : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'residents' ? `Residents (${hResidents.filter(r => !r.archived).length})` : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -194,23 +264,14 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <Field label="City">
-              <TextInput value={form.city} onChange={v => setField('city', v)} />
-            </Field>
-            <Field label="State">
-              <TextInput value={form.state} onChange={v => setField('state', v)} placeholder="NY" />
-            </Field>
-            <Field label="ZIP">
-              <TextInput value={form.zip} onChange={v => setField('zip', v)} placeholder="10001" />
-            </Field>
+            <Field label="City"><TextInput value={form.city} onChange={v => setField('city', v)} /></Field>
+            <Field label="State"><TextInput value={form.state} onChange={v => setField('state', v)} placeholder="NY" /></Field>
+            <Field label="ZIP"><TextInput value={form.zip} onChange={v => setField('zip', v)} placeholder="10001" /></Field>
           </div>
 
           <Field label="Property type">
-            <select
-              value={form.propertyType}
-              onChange={e => setField('propertyType', e.target.value)}
-              className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 focus:outline-none focus:ring-2 focus:ring-sage-300"
-            >
+            <select value={form.propertyType} onChange={e => setField('propertyType', e.target.value)}
+              className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 focus:outline-none focus:ring-2 focus:ring-sage-300">
               <option value="">— Select —</option>
               {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
@@ -219,16 +280,10 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
           <div className="pt-2 border-t border-sage-100">
             <p className="text-xs font-semibold text-sage-500 uppercase tracking-widest mb-3">Primary Contact</p>
             <div className="space-y-3">
-              <Field label="Contact name">
-                <TextInput value={form.contactName} onChange={v => setField('contactName', v)} />
-              </Field>
+              <Field label="Contact name"><TextInput value={form.contactName} onChange={v => setField('contactName', v)} /></Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Contact email">
-                  <TextInput value={form.contactEmail} onChange={v => setField('contactEmail', v)} />
-                </Field>
-                <Field label="Contact phone">
-                  <TextInput value={form.contactPhone} onChange={v => setField('contactPhone', v)} />
-                </Field>
+                <Field label="Contact email"><TextInput value={form.contactEmail} onChange={v => setField('contactEmail', v)} /></Field>
+                <Field label="Contact phone"><TextInput value={form.contactPhone} onChange={v => setField('contactPhone', v)} /></Field>
               </div>
               <Field label="Contact address">
                 <TextInput value={form.contactAddress} onChange={v => setField('contactAddress', v)} placeholder="If different from property" />
@@ -237,27 +292,19 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
           </div>
 
           <Field label="Notes">
-            <textarea
-              value={form.description}
-              onChange={e => setField('description', e.target.value)}
-              rows={3}
+            <textarea value={form.description} onChange={e => setField('description', e.target.value)} rows={3}
               className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 resize-none focus:outline-none focus:ring-2 focus:ring-sage-300"
             />
           </Field>
 
           <div className="flex items-center gap-3 pt-1">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-sage-600 text-white rounded-xl hover:bg-sage-700 disabled:opacity-50 transition-colors"
-            >
+            <button type="submit" disabled={saving}
+              className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-sage-600 text-white rounded-xl hover:bg-sage-700 disabled:opacity-50 transition-colors">
               <Save size={14} />
               {saving ? 'Saving…' : 'Save changes'}
             </button>
             {saveMsg && (
-              <span className={`text-sm ${saveMsg.ok ? 'text-sage-600' : 'text-red-500'}`}>
-                {saveMsg.text}
-              </span>
+              <span className={`text-sm ${saveMsg.ok ? 'text-sage-600' : 'text-red-500'}`}>{saveMsg.text}</span>
             )}
           </div>
         </form>
@@ -267,22 +314,31 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
       {tab === 'residents' && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-sage-500">
-              {hResidents.length} resident{hResidents.length !== 1 ? 's' : ''} in this household
-            </p>
-            {/* "+ Add Resident" desktop button — hidden on mobile, use FAB instead */}
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-sage-500">
+                {hResidents.filter(r => !r.archived).length} resident{hResidents.filter(r => !r.archived).length !== 1 ? 's' : ''}
+              </p>
+              {archivedResidentCount > 0 && isAdmin() && (
+                <button
+                  onClick={() => setShowArchivedResidents(v => !v)}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors
+                    ${showArchivedResidents ? 'bg-sage-100 border-sage-300 text-sage-700' : 'border-sage-200 text-sage-400 hover:bg-sage-50'}`}
+                >
+                  {showArchivedResidents ? 'Hide archived' : `+${archivedResidentCount} archived`}
+                </button>
+              )}
+            </div>
             {isAdmin() && (
               <button
                 onClick={() => setShowAddResident(true)}
                 className="hidden md:flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
               >
-                <Plus size={16} />
-                Add Resident
+                <Plus size={16} /> Add Resident
               </button>
             )}
           </div>
 
-          {hResidents.length === 0 ? (
+          {visibleResidents.length === 0 ? (
             <div className="text-center py-20 text-sage-300">
               <p className="text-4xl mb-3">🏘️</p>
               <p className="text-sm">No residents added yet.</p>
@@ -294,12 +350,16 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {hResidents.map(r => (
+              {visibleResidents.map(r => (
                 <ResidentCard
                   key={r.id}
                   resident={r}
                   projects={projects}
                   onClick={() => onSelectResident?.(r.id)}
+                  onArchive={() => archiveResident(r.id)}
+                  onRestore={() => restoreResident(r.id)}
+                  onDelete={() => setConfirmDelete({ type: 'resident', id: r.id, name: r.legalName })}
+                  isAdmin={isAdmin()}
                 />
               ))}
             </div>
@@ -311,76 +371,90 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
       {tab === 'projects' && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-sage-500">Household-level projects (not linked to a specific resident)</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-sage-500">Household-level projects</p>
+              {archivedProjectCount > 0 && isAdmin() && (
+                <button
+                  onClick={() => setShowArchivedProjects(v => !v)}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors
+                    ${showArchivedProjects ? 'bg-sage-100 border-sage-300 text-sage-700' : 'border-sage-200 text-sage-400 hover:bg-sage-50'}`}
+                >
+                  {showArchivedProjects ? 'Hide archived' : `+${archivedProjectCount} archived`}
+                </button>
+              )}
+            </div>
             {isAdmin() && (
-              <button
-                onClick={() => setShowAddProject(v => !v)}
-                className="flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm"
-              >
-                <Plus size={16} />
-                Add Project
+              <button onClick={() => setShowAddProject(v => !v)}
+                className="flex items-center gap-2 px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors shadow-sm">
+                <Plus size={16} /> Add Project
               </button>
             )}
           </div>
 
           {showAddProject && (
             <form onSubmit={handleAddProject} className="bg-white border-2 border-sage-200 rounded-xl p-4 mb-4 max-w-md flex gap-2">
-              <input
-                autoFocus
-                value={newProjectName}
-                onChange={e => setNewProjectName(e.target.value)}
+              <input autoFocus value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
                 placeholder="Project name…"
-                className="flex-1 text-sm border border-sage-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-300"
-              />
-              <button type="submit" className="px-4 py-2 text-sm font-semibold bg-sage-600 text-white rounded-lg hover:bg-sage-700">
-                Add
-              </button>
-              <button type="button" onClick={() => setShowAddProject(false)} className="px-3 py-2 text-sm text-sage-400 hover:text-sage-600">
-                ✕
-              </button>
+                className="flex-1 text-sm border border-sage-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-300" />
+              <button type="submit" className="px-4 py-2 text-sm font-semibold bg-sage-600 text-white rounded-lg hover:bg-sage-700">Add</button>
+              <button type="button" onClick={() => setShowAddProject(false)} className="px-3 py-2 text-sm text-sage-400 hover:text-sage-600">✕</button>
             </form>
           )}
 
-          {hProjects.length === 0 ? (
+          {visibleProjects.length === 0 ? (
             <div className="text-center py-20 text-sage-300">
               <p className="text-4xl mb-3">📋</p>
               <p className="text-sm">No household projects yet.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {hProjects.map(p => {
+              {visibleProjects.map(p => {
                 const pt = tasks.filter(t => t.projectId === p.id)
                 const done = pt.filter(t => t.status === 'done').length
                 const pct = pt.length > 0 ? Math.round((done / pt.length) * 100) : 0
                 return (
-                  <button
-                    key={p.id}
-                    onClick={() => onSelectProject(p.id)}
-                    className="bg-white rounded-xl border border-sage-100 shadow-sm p-5 text-left hover:shadow-md transition-shadow"
+                  <div key={p.id} className={`relative bg-white rounded-xl border shadow-sm
+                    ${p.archived ? 'opacity-60 border-sage-200' : 'border-sage-100 hover:shadow-md transition-shadow'}`}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-semibold text-sage-800 flex-1 pr-2">{p.name}</h3>
-                      <span className={`text-xs px-2 py-0.5 rounded-full capitalize shrink-0
-                        ${p.status === 'active'    ? 'bg-sage-100 text-sage-600' :
-                          p.status === 'completed' ? 'bg-green-50 text-green-600' :
-                                                     'bg-gray-100 text-gray-500'}`}
-                      >
-                        {p.status}
-                      </span>
+                    <div className="absolute top-4 right-4 z-10">
+                      <ThreeDotMenu
+                        archived={p.archived}
+                        onArchive={() => archiveProject(p.id)}
+                        onRestore={() => restoreProject(p.id)}
+                        onDelete={() => setConfirmDelete({ type: 'project', id: p.id, name: p.name })}
+                        isAdmin={isAdmin()}
+                      />
                     </div>
-                    {p.description && (
-                      <p className="text-xs text-sage-500 mb-3 line-clamp-2">{p.description}</p>
-                    )}
-                    <div className="flex gap-3 text-xs text-sage-400 mb-3">
-                      <span>{pt.filter(t => t.status !== 'done').length} open</span>
-                      <span>·</span>
-                      <span>{done} done</span>
-                      {p.dueDate && <span>· Due {p.dueDate}</span>}
-                    </div>
-                    <div className="h-1.5 bg-sage-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-sage-500 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => !p.archived && onSelectProject(p.id)}
+                      className="w-full text-left p-5 pr-12"
+                    >
+                      {p.archived && (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-sage-100 text-sage-500 rounded-full mb-2">
+                          <Archive size={10} /> Archived
+                        </span>
+                      )}
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-semibold text-sage-800 flex-1 pr-2">{p.name}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full capitalize shrink-0
+                          ${p.status === 'active' ? 'bg-sage-100 text-sage-600' :
+                            p.status === 'completed' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}
+                        >
+                          {p.status}
+                        </span>
+                      </div>
+                      {p.description && <p className="text-xs text-sage-500 mb-3 line-clamp-2">{p.description}</p>}
+                      <div className="flex gap-3 text-xs text-sage-400 mb-3">
+                        <span>{pt.filter(t => t.status !== 'done').length} open</span>
+                        <span>·</span>
+                        <span>{done} done</span>
+                        {p.dueDate && <span>· Due {p.dueDate}</span>}
+                      </div>
+                      <div className="h-1.5 bg-sage-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-sage-500 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -388,7 +462,7 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
         </div>
       )}
 
-      {/* Mobile FAB — "+ Add Resident" (residents tab only) */}
+      {/* Mobile FAB */}
       {tab === 'residents' && isAdmin() && (
         <button
           onClick={() => setShowAddResident(true)}
@@ -404,6 +478,19 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
           householdId={householdId}
           onClose={() => setShowAddResident(false)}
           onSaved={() => setShowAddResident(false)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          entityType={confirmDelete.type}
+          name={confirmDelete.name}
+          onConfirm={() => {
+            if (confirmDelete.type === 'resident') deleteResident(confirmDelete.id)
+            else deleteProject(confirmDelete.id)
+            setConfirmDelete(null)
+          }}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
     </div>

@@ -14,8 +14,8 @@ export default function TaskList({ listId }) {
   const { currentUser } = useAuth()
   const list = lists.find(l => l.id === listId)
 
-  // Filter tasks for this list
-  let visible = tasks.filter(t => t.listId === listId)
+  // Filter tasks for this list (exclude archived)
+  let visible = tasks.filter(t => t.listId === listId && !t.archived)
   if (filter === 'mine')  visible = visible.filter(t => t.assignedTo === currentUser.id)
   if (filter === 'todo')  visible = visible.filter(t => t.status !== 'done')
   if (filter === 'done')  visible = visible.filter(t => t.status === 'done')

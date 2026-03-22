@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../lib/logActivity'
+import { createEvent } from '../lib/googleCalendar'
 import { useAuth } from './AuthContext'
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 // Exposes: tasks, lists, loading
-//          addTask, updateTask, deleteTask, toggleDone, addList
+//          addTask, updateTask, deleteTask, archiveTask, toggleDone, addList
 
 const TaskContext = createContext(null)
 
@@ -21,6 +22,9 @@ function mapTask(row) {
     status: row.status,
     dueDate: row.due_date,
     notes: row.notes,
+    archived: row.archived ?? false,
+    googleEventId: row.google_event_id ?? '',
+    googleCalendarId: row.google_calendar_id ?? '',
     createdAt: row.created_at,
   }
 }
@@ -32,6 +36,7 @@ function mapList(row) {
     icon: row.icon,
     color: row.color,
     householdId: row.household_id ?? null,
+    archived: row.archived ?? false,
   }
 }
 
@@ -65,6 +70,7 @@ export function TaskProvider({ children }) {
         status: 'todo',
         due_date: task.dueDate ?? null,
         notes: task.notes ?? '',
+        archived: false,
       })
       .select()
       .single()
@@ -72,6 +78,10 @@ export function TaskProvider({ children }) {
     const newTask = mapTask(data)
     setTasks(prev => [newTask, ...prev])
     await logActivity(supabase, currentUser?.id, 'created', 'task', newTask.id, newTask.title)
+    // Google Calendar stub — will no-op until configured
+    if (newTask.dueDate && !newTask.googleEventId) {
+      await createEvent(newTask)
+    }
     return newTask
   }
 
@@ -84,6 +94,7 @@ export function TaskProvider({ children }) {
     if ('status'     in changes) dbChanges.status      = changes.status
     if ('dueDate'    in changes) dbChanges.due_date    = changes.dueDate
     if ('notes'      in changes) dbChanges.notes       = changes.notes
+    if ('archived'   in changes) dbChanges.archived    = changes.archived
     const { error } = await supabase.from('tasks').update(dbChanges).eq('id', id)
     if (error) throw error
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t))
@@ -92,6 +103,7 @@ export function TaskProvider({ children }) {
     if ('priority'   in changes) action = `updated priority to ${changes.priority}`
     if ('assignedTo' in changes) action = 'assigned to'
     if ('status'     in changes) action = changes.status === 'done' ? 'completed' : `set status to ${changes.status}`
+    if ('archived'   in changes) action = changes.archived ? 'archived' : 'restored'
     await logActivity(supabase, currentUser?.id, action, 'task', id, task?.title)
   }
 
@@ -101,6 +113,10 @@ export function TaskProvider({ children }) {
     if (error) throw error
     setTasks(prev => prev.filter(t => t.id !== id))
     await logActivity(supabase, currentUser?.id, 'deleted', 'task', id, task?.title)
+  }
+
+  async function archiveTask(id) {
+    await updateTask(id, { archived: true })
   }
 
   async function toggleDone(id) {
@@ -121,7 +137,10 @@ export function TaskProvider({ children }) {
   }
 
   return (
-    <TaskContext.Provider value={{ tasks, lists, loading, addTask, updateTask, deleteTask, toggleDone, addList }}>
+    <TaskContext.Provider value={{
+      tasks, lists, loading,
+      addTask, updateTask, deleteTask, archiveTask, toggleDone, addList,
+    }}>
       {children}
     </TaskContext.Provider>
   )

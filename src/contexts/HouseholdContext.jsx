@@ -5,9 +5,9 @@ import { useAuth } from './AuthContext'
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 // Exposes: households, projects, residents, activity, loading, dbError
-//          addHousehold, updateHousehold
-//          addProject, updateProject
-//          addResident, updateResident
+//          addHousehold, updateHousehold, archiveHousehold, deleteHousehold
+//          addProject, updateProject, archiveProject, deleteProject
+//          addResident, updateResident, archiveResident, deleteResident
 //          refreshActivity
 
 const HouseholdContext = createContext(null)
@@ -16,9 +16,9 @@ function mapHousehold(row) {
   return {
     id: row.id,
     name: row.name,
-    address: row.address ?? '',        // legacy field
-    address_1: row.address_1 ?? '',    // DB column: address_1
-    address_2: row.address_2 ?? '',    // DB column: address_2
+    address: row.address ?? '',
+    address_1: row.address_1 ?? '',
+    address_2: row.address_2 ?? '',
     city: row.city ?? '',
     state: row.state ?? '',
     zip: row.zip ?? '',
@@ -28,6 +28,7 @@ function mapHousehold(row) {
     contactPhone: row.contact_phone ?? '',
     contactAddress: row.contact_address ?? '',
     description: row.description ?? '',
+    archived: row.archived ?? false,
     createdBy: row.created_by,
     createdAt: row.created_at,
   }
@@ -43,16 +44,12 @@ function mapProject(row) {
     description: row.description ?? '',
     status: row.status ?? 'active',
     dueDate: row.due_date,
+    archived: row.archived ?? false,
     createdBy: row.created_by,
     createdAt: row.created_at,
   }
 }
 
-// Residents table actual column names:
-// household_id, legal_name, preferred_name, gender_identity, sex_at_birth,
-// race_ethnicity, primary_language, contact_method, contact_address,
-// mailing_address, emergency_contact, ssn_masked, medicaid_id, medicare_id,
-// mpi_id, gov_id_type, gov_id_number, other_insurance_id
 function mapResident(row) {
   return {
     id: row.id,
@@ -74,6 +71,7 @@ function mapResident(row) {
     govIdType: row.gov_id_type ?? '',
     govIdNumber: row.gov_id_number ?? '',
     otherInsuranceId: row.other_insurance_id ?? '',
+    archived: row.archived ?? false,
     createdBy: row.created_by,
     createdAt: row.created_at,
   }
@@ -93,7 +91,6 @@ function mapActivity(row) {
   }
 }
 
-// Detect "table does not exist" errors from Supabase/PostgreSQL
 function isMissingTable(error) {
   return error?.code === '42P01' || error?.message?.includes('does not exist')
 }
@@ -147,6 +144,8 @@ export function HouseholdProvider({ children }) {
     })
   }, [])
 
+  // ── Households ──────────────────────────────────────────────────────────────
+
   async function addHousehold(data) {
     const { data: row, error } = await supabase
       .from('households')
@@ -169,8 +168,8 @@ export function HouseholdProvider({ children }) {
     const dbChanges = {}
     if ('name'           in changes) dbChanges.name            = changes.name
     if ('address'        in changes) dbChanges.address         = changes.address
-    if ('address_1'      in changes) dbChanges.address_1       = changes.address_1   // DB: address_1
-    if ('address_2'      in changes) dbChanges.address_2       = changes.address_2   // DB: address_2
+    if ('address_1'      in changes) dbChanges.address_1       = changes.address_1
+    if ('address_2'      in changes) dbChanges.address_2       = changes.address_2
     if ('city'           in changes) dbChanges.city            = changes.city
     if ('state'          in changes) dbChanges.state           = changes.state
     if ('zip'            in changes) dbChanges.zip             = changes.zip
@@ -180,13 +179,42 @@ export function HouseholdProvider({ children }) {
     if ('contactPhone'   in changes) dbChanges.contact_phone   = changes.contactPhone
     if ('contactAddress' in changes) dbChanges.contact_address = changes.contactAddress
     if ('description'    in changes) dbChanges.description     = changes.description
+    if ('archived'       in changes) dbChanges.archived        = changes.archived
 
     const { error } = await supabase.from('households').update(dbChanges).eq('id', id)
     if (error) throw error
     setHouseholds(prev => prev.map(h => h.id === id ? { ...h, ...changes } : h))
     const h = households.find(h => h.id === id)
-    await logActivity(supabase, currentUser?.id, 'updated', 'household', id, h?.name)
+    const action = 'archived' in changes ? (changes.archived ? 'archived' : 'restored') : 'updated'
+    await logActivity(supabase, currentUser?.id, action, 'household', id, h?.name)
   }
+
+  async function archiveHousehold(id) {
+    await updateHousehold(id, { archived: true })
+  }
+
+  async function restoreHousehold(id) {
+    await updateHousehold(id, { archived: false })
+  }
+
+  async function deleteHousehold(id) {
+    const h = households.find(h => h.id === id)
+    // Cascade: delete tasks → projects → residents → household
+    const hProjects = projects.filter(p => p.householdId === id)
+    for (const p of hProjects) {
+      await supabase.from('tasks').delete().eq('project_id', p.id)
+    }
+    await supabase.from('projects').delete().eq('household_id', id)
+    await supabase.from('residents').delete().eq('household_id', id)
+    const { error } = await supabase.from('households').delete().eq('id', id)
+    if (error) throw error
+    setHouseholds(prev => prev.filter(x => x.id !== id))
+    setProjects(prev => prev.filter(p => p.householdId !== id))
+    setResidents(prev => prev.filter(r => r.householdId !== id))
+    await logActivity(supabase, currentUser?.id, 'deleted', 'household', id, h?.name)
+  }
+
+  // ── Projects ────────────────────────────────────────────────────────────────
 
   async function addProject(data) {
     const { data: row, error } = await supabase
@@ -217,37 +245,58 @@ export function HouseholdProvider({ children }) {
     if ('status'      in changes) dbChanges.status       = changes.status
     if ('dueDate'     in changes) dbChanges.due_date     = changes.dueDate
     if ('projectType' in changes) dbChanges.project_type = changes.projectType
+    if ('archived'    in changes) dbChanges.archived     = changes.archived
     const { error } = await supabase.from('projects').update(dbChanges).eq('id', id)
     if (error) throw error
     setProjects(prev => prev.map(p => p.id === id ? { ...p, ...changes } : p))
     const p = projects.find(p => p.id === id)
-    const action = changes.status === 'completed' ? 'completed' : 'updated'
+    let action = changes.status === 'completed' ? 'completed' : 'updated'
+    if ('archived' in changes) action = changes.archived ? 'archived' : 'restored'
     await logActivity(supabase, currentUser?.id, action, 'project', id, p?.name)
   }
+
+  async function archiveProject(id) {
+    await updateProject(id, { archived: true })
+  }
+
+  async function restoreProject(id) {
+    await updateProject(id, { archived: false })
+  }
+
+  async function deleteProject(id) {
+    const p = projects.find(p => p.id === id)
+    await supabase.from('tasks').delete().eq('project_id', id)
+    const { error } = await supabase.from('projects').delete().eq('id', id)
+    if (error) throw error
+    setProjects(prev => prev.filter(x => x.id !== id))
+    await logActivity(supabase, currentUser?.id, 'deleted', 'project', id, p?.name)
+  }
+
+  // ── Residents ───────────────────────────────────────────────────────────────
 
   async function addResident(data) {
     const { data: row, error } = await supabase
       .from('residents')
       .insert({
-        household_id:     data.householdId,
-        legal_name:       data.legalName ?? '',
-        preferred_name:   data.preferredName ?? '',
-        gender_identity:  data.genderIdentity ?? '',
-        sex_at_birth:     data.sexAtBirth ?? '',
-        race_ethnicity:   data.raceEthnicity ?? '',
-        primary_language: data.primaryLanguage ?? '',
-        contact_method:   data.contactMethod ?? '',
-        contact_address:  data.contactAddress ?? '',
-        mailing_address:  data.mailingAddress ?? '',
+        household_id:      data.householdId,
+        legal_name:        data.legalName ?? '',
+        preferred_name:    data.preferredName ?? '',
+        gender_identity:   data.genderIdentity ?? '',
+        sex_at_birth:      data.sexAtBirth ?? '',
+        race_ethnicity:    data.raceEthnicity ?? '',
+        primary_language:  data.primaryLanguage ?? '',
+        contact_method:    data.contactMethod ?? '',
+        contact_address:   data.contactAddress ?? '',
+        mailing_address:   data.mailingAddress ?? '',
         emergency_contact: data.emergencyContact ?? '',
-        ssn_masked:       data.ssnMasked ?? '',
-        medicaid_id:      data.medicaidId ?? '',
-        medicare_id:      data.medicareId ?? '',
-        mpi_id:           data.mpiId ?? '',
-        gov_id_type:      data.govIdType ?? '',
-        gov_id_number:    data.govIdNumber ?? '',
+        ssn_masked:        data.ssnMasked ?? '',
+        medicaid_id:       data.medicaidId ?? '',
+        medicare_id:       data.medicareId ?? '',
+        mpi_id:            data.mpiId ?? '',
+        gov_id_type:       data.govIdType ?? '',
+        gov_id_number:     data.govIdNumber ?? '',
         other_insurance_id: data.otherInsuranceId ?? '',
-        created_by:       currentUser?.id,
+        created_by:        currentUser?.id,
       })
       .select()
       .single()
@@ -260,30 +309,72 @@ export function HouseholdProvider({ children }) {
 
   async function updateResident(id, changes) {
     const dbChanges = {}
-    if ('legalName'       in changes) dbChanges.legal_name        = changes.legalName
-    if ('preferredName'   in changes) dbChanges.preferred_name    = changes.preferredName
-    if ('genderIdentity'  in changes) dbChanges.gender_identity   = changes.genderIdentity
-    if ('sexAtBirth'      in changes) dbChanges.sex_at_birth      = changes.sexAtBirth
-    if ('raceEthnicity'   in changes) dbChanges.race_ethnicity    = changes.raceEthnicity
-    if ('primaryLanguage' in changes) dbChanges.primary_language  = changes.primaryLanguage
-    if ('contactMethod'   in changes) dbChanges.contact_method    = changes.contactMethod
-    if ('contactAddress'  in changes) dbChanges.contact_address   = changes.contactAddress
-    if ('mailingAddress'  in changes) dbChanges.mailing_address   = changes.mailingAddress
+    if ('legalName'        in changes) dbChanges.legal_name        = changes.legalName
+    if ('preferredName'    in changes) dbChanges.preferred_name    = changes.preferredName
+    if ('genderIdentity'   in changes) dbChanges.gender_identity   = changes.genderIdentity
+    if ('sexAtBirth'       in changes) dbChanges.sex_at_birth      = changes.sexAtBirth
+    if ('raceEthnicity'    in changes) dbChanges.race_ethnicity    = changes.raceEthnicity
+    if ('primaryLanguage'  in changes) dbChanges.primary_language  = changes.primaryLanguage
+    if ('contactMethod'    in changes) dbChanges.contact_method    = changes.contactMethod
+    if ('contactAddress'   in changes) dbChanges.contact_address   = changes.contactAddress
+    if ('mailingAddress'   in changes) dbChanges.mailing_address   = changes.mailingAddress
     if ('emergencyContact' in changes) dbChanges.emergency_contact = changes.emergencyContact
-    if ('ssnMasked'       in changes) dbChanges.ssn_masked        = changes.ssnMasked
-    if ('medicaidId'      in changes) dbChanges.medicaid_id       = changes.medicaidId
-    if ('medicareId'      in changes) dbChanges.medicare_id       = changes.medicareId
-    if ('mpiId'           in changes) dbChanges.mpi_id            = changes.mpiId
-    if ('govIdType'       in changes) dbChanges.gov_id_type       = changes.govIdType
-    if ('govIdNumber'     in changes) dbChanges.gov_id_number     = changes.govIdNumber
+    if ('ssnMasked'        in changes) dbChanges.ssn_masked        = changes.ssnMasked
+    if ('medicaidId'       in changes) dbChanges.medicaid_id       = changes.medicaidId
+    if ('medicareId'       in changes) dbChanges.medicare_id       = changes.medicareId
+    if ('mpiId'            in changes) dbChanges.mpi_id            = changes.mpiId
+    if ('govIdType'        in changes) dbChanges.gov_id_type       = changes.govIdType
+    if ('govIdNumber'      in changes) dbChanges.gov_id_number     = changes.govIdNumber
     if ('otherInsuranceId' in changes) dbChanges.other_insurance_id = changes.otherInsuranceId
+    if ('archived'         in changes) dbChanges.archived          = changes.archived
 
     const { error } = await supabase.from('residents').update(dbChanges).eq('id', id)
     if (error) throw error
-    setResidents(prev => prev.map(r => r.id === id ? { ...r, ...changes } : r))
+
     const r = residents.find(r => r.id === id)
-    await logActivity(supabase, currentUser?.id, 'updated', 'resident', id, r?.legalName ?? id)
+
+    // Name sync: if legalName changed, update project names that contained old name
+    if ('legalName' in changes && r?.legalName && changes.legalName !== r.legalName) {
+      const residentProjects = projects.filter(p => p.residentId === id)
+      for (const p of residentProjects) {
+        if (p.name.includes(r.legalName)) {
+          const newName = p.name.replace(r.legalName, changes.legalName)
+          await supabase.from('projects').update({ name: newName }).eq('id', p.id)
+          setProjects(prev => prev.map(x => x.id === p.id ? { ...x, name: newName } : x))
+        }
+      }
+    }
+
+    setResidents(prev => prev.map(x => x.id === id ? { ...x, ...changes } : x))
+
+    let action = 'updated'
+    if ('archived' in changes) action = changes.archived ? 'archived' : 'restored'
+    await logActivity(supabase, currentUser?.id, action, 'resident', id, r?.legalName ?? id)
   }
+
+  async function archiveResident(id) {
+    await updateResident(id, { archived: true })
+  }
+
+  async function restoreResident(id) {
+    await updateResident(id, { archived: false })
+  }
+
+  async function deleteResident(id) {
+    const r = residents.find(r => r.id === id)
+    const rProjects = projects.filter(p => p.residentId === id)
+    for (const p of rProjects) {
+      await supabase.from('tasks').delete().eq('project_id', p.id)
+    }
+    await supabase.from('projects').delete().eq('resident_id', id)
+    const { error } = await supabase.from('residents').delete().eq('id', id)
+    if (error) throw error
+    setResidents(prev => prev.filter(x => x.id !== id))
+    setProjects(prev => prev.filter(p => p.residentId !== id))
+    await logActivity(supabase, currentUser?.id, 'deleted', 'resident', id, r?.legalName ?? id)
+  }
+
+  // ── Activity ─────────────────────────────────────────────────────────────────
 
   async function refreshActivity() {
     const { data, error } = await supabase
@@ -301,9 +392,9 @@ export function HouseholdProvider({ children }) {
   return (
     <HouseholdContext.Provider value={{
       households, projects, residents, activity, loading, dbError,
-      addHousehold, updateHousehold,
-      addProject, updateProject,
-      addResident, updateResident,
+      addHousehold, updateHousehold, archiveHousehold, restoreHousehold, deleteHousehold,
+      addProject, updateProject, archiveProject, restoreProject, deleteProject,
+      addResident, updateResident, archiveResident, restoreResident, deleteResident,
       refreshActivity,
     }}>
       {children}
