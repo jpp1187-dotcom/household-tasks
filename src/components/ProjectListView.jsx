@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Check, Calendar } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
@@ -19,51 +20,105 @@ const PRIORITY_STYLES = {
   low:    'bg-sage-50 text-sage-500 border-sage-200',
 }
 
+function mapDbTask(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    priority: row.priority,
+    dueDate: row.due_date,
+    assignedTo: row.assigned_to,
+    projectId: row.project_id,
+    archived: row.archived ?? false,
+    // enriched from JOIN
+    projectType: row.project_type ?? '',
+    residentId: row.resident_id ?? null,
+    residentName: row.legal_name ?? '',
+    preferredName: row.preferred_name ?? '',
+    householdName: row.household_name ?? '',
+  }
+}
+
 export default function ProjectListView({ domain, navigate }) {
   const { allUsers } = useAuth()
-  const { tasks, toggleDone } = useTasks()
-  const { projects, residents, households } = useHouseholds()
+  const { toggleDone } = useTasks()
+  const { residents, households } = useHouseholds()
+
+  const [domainTasks, setDomainTasks] = useState([])
+  const [loadingTasks, setLoadingTasks] = useState(true)
   const [residentFilter, setResidentFilter] = useState(null)
 
   const cfg = DOMAIN_CONFIG[domain] ?? DOMAIN_CONFIG.housing
 
-  // Projects matching this domain (not archived)
-  const domainProjects = projects.filter(p =>
-    !p.archived && p.projectType === domain
-  )
-  const projectIds = new Set(domainProjects.map(p => p.id))
+  // Fetch tasks for this domain with a JOIN through projects → residents → households
+  useEffect(() => {
+    setResidentFilter(null)
+    setLoadingTasks(true)
 
-  // Tasks for these projects (not archived)
-  let domainTasks = tasks.filter(t => !t.archived && projectIds.has(t.projectId))
+    // Step 1: get project IDs for this domain
+    supabase
+      .from('projects')
+      .select('id, resident_id, household_id')
+      .eq('project_type', domain)
+      .eq('archived', false)
+      .then(({ data: domainProjects, error: pErr }) => {
+        if (pErr || !domainProjects || domainProjects.length === 0) {
+          setDomainTasks([])
+          setLoadingTasks(false)
+          return
+        }
+
+        const projectIds = domainProjects.map(p => p.id)
+        const projectMap = Object.fromEntries(domainProjects.map(p => [p.id, p]))
+
+        // Step 2: get tasks for those projects
+        supabase
+          .from('tasks')
+          .select('*')
+          .in('project_id', projectIds)
+          .eq('archived', false)
+          .then(({ data: taskRows }) => {
+            const enriched = (taskRows ?? []).map(row => {
+              const proj = projectMap[row.project_id] ?? {}
+              const resident = proj.resident_id
+                ? residents.find(r => r.id === proj.resident_id)
+                : null
+              const household = proj.household_id
+                ? households.find(h => h.id === proj.household_id)
+                : null
+              return {
+                id: row.id,
+                title: row.title,
+                status: row.status,
+                priority: row.priority,
+                dueDate: row.due_date,
+                assignedTo: row.assigned_to,
+                projectId: row.project_id,
+                archived: row.archived ?? false,
+                residentId: proj.resident_id ?? null,
+                residentName: resident?.legalName ?? '',
+                preferredName: resident?.preferredName ?? '',
+                householdName: household?.name ?? '',
+              }
+            })
+            setDomainTasks(enriched)
+            setLoadingTasks(false)
+          })
+      })
+  }, [domain, residents, households])
 
   // Resident filter chips
-  const residentIds = [...new Set(
-    domainProjects.filter(p => p.residentId).map(p => p.residentId)
-  )]
-  const filterResidents = residentIds
+  const residentIdSet = [...new Set(domainTasks.filter(t => t.residentId).map(t => t.residentId))]
+  const filterResidents = residentIdSet
     .map(id => residents.find(r => r.id === id))
     .filter(Boolean)
 
-  if (residentFilter) {
-    const filteredProjectIds = new Set(
-      domainProjects.filter(p => p.residentId === residentFilter).map(p => p.id)
-    )
-    domainTasks = domainTasks.filter(t => filteredProjectIds.has(t.projectId))
-  }
+  const visibleTasks = residentFilter
+    ? domainTasks.filter(t => t.residentId === residentFilter)
+    : domainTasks
 
-  const openCount = domainTasks.filter(t => t.status !== 'done').length
-  const doneCount = domainTasks.filter(t => t.status === 'done').length
-
-  function getResidentContext(task) {
-    const project = domainProjects.find(p => p.id === task.projectId)
-    if (!project) return { residentName: '', householdName: '' }
-    const resident = project.residentId ? residents.find(r => r.id === project.residentId) : null
-    const household = households.find(h => h.id === project.householdId)
-    return {
-      residentName: resident?.legalName ?? '',
-      householdName: household?.name ?? '',
-    }
-  }
+  const openCount = visibleTasks.filter(t => t.status !== 'done').length
+  const doneCount = visibleTasks.filter(t => t.status === 'done').length
 
   function getAssignee(task) {
     return allUsers.find(u => u.id === task.assignedTo)
@@ -80,7 +135,7 @@ export default function ProjectListView({ domain, navigate }) {
           <h2 className="font-display text-2xl text-sage-800">{cfg.label}</h2>
         </div>
         <p className="text-xs text-sage-400">
-          {openCount} open · {doneCount} done · {domainProjects.length} project{domainProjects.length !== 1 ? 's' : ''}
+          {loadingTasks ? 'Loading…' : `${openCount} open · ${doneCount} done`}
         </p>
 
         {/* Resident filter chips */}
@@ -109,15 +164,16 @@ export default function ProjectListView({ domain, navigate }) {
 
       {/* Task list */}
       <div className="px-4 md:px-8 py-5">
-        {domainTasks.length === 0 ? (
+        {loadingTasks ? (
+          <p className="text-sm text-sage-300 text-center py-12">Loading tasks…</p>
+        ) : visibleTasks.length === 0 ? (
           <div className="text-center py-20 text-sage-300">
             <p className="text-4xl mb-3">{cfg.icon}</p>
             <p className="text-sm">No tasks in {cfg.label} yet.</p>
           </div>
         ) : (
           <div className="space-y-2 max-w-4xl">
-            {domainTasks.map(task => {
-              const { residentName, householdName } = getResidentContext(task)
+            {visibleTasks.map(task => {
               const assignee = getAssignee(task)
               return (
                 <div
@@ -140,11 +196,13 @@ export default function ProjectListView({ domain, navigate }) {
 
                   {/* Resident + Household context */}
                   <div className="hidden md:flex flex-col items-end min-w-0 max-w-40">
-                    {residentName && (
-                      <span className="text-xs text-sage-600 truncate font-medium">{residentName}</span>
+                    {(task.preferredName || task.residentName) && (
+                      <span className="text-xs text-sage-600 truncate font-medium">
+                        {task.preferredName || task.residentName}
+                      </span>
                     )}
-                    {householdName && (
-                      <span className="text-xs text-sage-400 truncate">{householdName}</span>
+                    {task.householdName && (
+                      <span className="text-xs text-sage-400 truncate">{task.householdName}</span>
                     )}
                   </div>
 

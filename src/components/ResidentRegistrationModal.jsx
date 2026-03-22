@@ -47,14 +47,23 @@ const EMPTY = {
 }
 
 export default function ResidentRegistrationModal({ householdId, existingResident = null, onClose, onSaved }) {
-  const { addResident, updateResident, addProject } = useHouseholds()
+  const { addResident, updateResident, addProject, households } = useHouseholds()
+  const household = households.find(h => h.id === householdId)
+
+  // Build pre-filled address from household
+  const householdAddress = household
+    ? [household.address_1, household.city, household.state, household.zip]
+        .filter(Boolean)
+        .join(', ')
+    : ''
+
   const [step, setStep] = useState(0)
   const [form, setForm] = useState(existingResident
     ? {
         ...existingResident,
         projectTypes: [],  // existing projects shown in ResidentProfile, not here
       }
-    : { ...EMPTY }
+    : { ...EMPTY, contactAddress: householdAddress }
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -196,6 +205,9 @@ export default function ResidentRegistrationModal({ householdId, existingResiden
                   placeholder="123 Main St, City, ST 00000"
                   className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 resize-none focus:outline-none focus:ring-2 focus:ring-sage-300"
                 />
+                {!existingResident && householdAddress && (
+                  <p className="text-xs text-sage-400 mt-1">Pre-filled from household — edit if different.</p>
+                )}
               </Field>
               <Field label="Mailing address (if different)">
                 <textarea

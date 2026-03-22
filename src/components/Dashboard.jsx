@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
+import { DOMAIN_CONFIG } from './ProjectListView'
 import {
   BarChart, Bar,
   PieChart, Pie, Cell,
@@ -57,6 +58,18 @@ export default function Dashboard({ navigate }) {
       done: ht.filter(t => t.status === 'done').length,
       open: ht.filter(t => t.status !== 'done').length,
       total: ht.length,
+    }
+  }).filter(d => d.total > 0)
+
+  // Domain task data (by project type)
+  const domainData = Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => {
+    const domainProjectIds = new Set(projects.filter(p => p.projectType === key).map(p => p.id))
+    const dt = tasks.filter(t => domainProjectIds.has(t.projectId))
+    return {
+      name: cfg.label,
+      done: dt.filter(t => t.status === 'done').length,
+      open: dt.filter(t => t.status !== 'done').length,
+      total: dt.length,
     }
   }).filter(d => d.total > 0)
 
@@ -155,9 +168,10 @@ export default function Dashboard({ navigate }) {
             <h3 className="font-display text-lg text-sage-800">Overview</h3>
             <div className="flex gap-1">
               {[
-                ['bar',   'By Household'],
-                ['pie',   'Distribution'],
-                ['gantt', 'Projects'],
+                ['bar',    'By Household'],
+                ['domain', 'By Domain'],
+                ['pie',    'Distribution'],
+                ['gantt',  'Projects'],
               ].map(([type, label]) => (
                 <button
                   key={type}
@@ -171,11 +185,26 @@ export default function Dashboard({ navigate }) {
             </div>
           </div>
 
-          {chartType !== 'gantt' && householdData.length === 0 && (
+          {chartType === 'domain' && domainData.length === 0 && (
+            <p className="text-center text-sage-300 text-sm py-12">No domain task data yet.</p>
+          )}
+          {chartType !== 'domain' && chartType !== 'gantt' && householdData.length === 0 && (
             <p className="text-center text-sage-300 text-sm py-12">No household task data yet.</p>
           )}
           {chartType === 'gantt' && ganttData.length === 0 && (
             <p className="text-center text-sage-300 text-sm py-12">No projects yet.</p>
+          )}
+
+          {chartType === 'domain' && domainData.length > 0 && (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={domainData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6d9f6d' }} />
+                <YAxis tick={{ fontSize: 12, fill: '#6d9f6d' }} allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="done" name="Done" fill="#4a7c4a" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="open" name="Open" fill="#c9ddc9" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           )}
 
           {chartType === 'bar' && householdData.length > 0 && (

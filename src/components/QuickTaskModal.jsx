@@ -36,9 +36,11 @@ export default function QuickTaskModal({ onClose }) {
     : []
 
   function selectResident(r) {
+    // Compute projects for r directly (not from state — state hasn't updated yet)
+    const rProjects = projects.filter(p => p.residentId === r.id && !p.archived && p.status === 'active')
     setSelectedResident(r)
     setResidentSearch(r.preferredName || r.legalName)
-    setSelectedProjectId(residentProjects[0]?.id ?? '')
+    setSelectedProjectId(rProjects[0]?.id ?? '')
     setShowResidentList(false)
   }
 

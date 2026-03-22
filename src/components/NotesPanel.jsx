@@ -100,7 +100,7 @@ function FreeWriteForm({ onSave, onCancel }) {
         placeholder="Write anything…" autoFocus
       />
       <div className="flex gap-2">
-        <button onClick={() => onSave('freewrite', { content })}
+        <button onClick={() => onSave('free', { content })}
           disabled={!content.trim()}
           className="px-4 py-1.5 text-sm font-semibold bg-sage-600 text-white rounded-lg hover:bg-sage-700 disabled:opacity-40">
           Save Note

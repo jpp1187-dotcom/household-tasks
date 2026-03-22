@@ -6,7 +6,12 @@ import { useTasks } from '../contexts/TaskContext'
 import ResidentRegistrationModal from './ResidentRegistrationModal'
 import NotesPanel from './NotesPanel'
 
-const PROPERTY_TYPES = ['Single Family', 'Condo', 'Apartment', 'Townhouse', 'Group Home', 'Other']
+const PROPERTY_TYPES = [
+  { value: 'apartment', label: 'Apartment' },
+  { value: 'house',     label: 'House' },
+  { value: 'mixed_use', label: 'Mixed Use' },
+  { value: 'other',     label: 'Other' },
+]
 
 function Field({ label, children }) {
   return (
@@ -274,7 +279,7 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
             <select value={form.propertyType} onChange={e => setField('propertyType', e.target.value)}
               className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 focus:outline-none focus:ring-2 focus:ring-sage-300">
               <option value="">— Select —</option>
-              {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {PROPERTY_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </Field>
 
