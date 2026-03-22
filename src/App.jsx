@@ -9,37 +9,94 @@ import MyTasks from './components/MyTasks'
 import TaskList from './components/TaskList'
 import HouseholdList from './components/HouseholdList'
 import HouseholdDetail from './components/HouseholdDetail'
-import ProjectDetail from './components/ProjectDetail'
 import ResidentProfile from './components/ResidentProfile'
 import ResidentListPage from './components/ResidentListPage'
-import ProjectListPage from './components/ProjectListPage'
 import ActivityFeed from './components/ActivityFeed'
 import ProfilePage from './components/ProfilePage'
 import UserDirectory from './components/UserDirectory'
 import AddListModal from './components/AddListModal'
-import ProjectListView from './components/ProjectListView'
 import CalendarPage from './components/CalendarPage'
 import TeamsPage from './components/TeamsPage'
 import MessagesPage from './components/MessagesPage'
 import GlobalSearch from './components/GlobalSearch'
 import QuickTaskModal from './components/QuickTaskModal'
 import LoginPage from './components/LoginPage'
+import { DOMAIN_CONFIG } from './lib/domains'
 
 const GORMY = 'https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png'
 
+// ── All-tasks page (simple inline component) ──────────────────────────────────
+function AllTasksPage() {
+  const { tasks, toggleDone } = useTasks()
+
+  const open = tasks.filter(t => t.status !== 'done' && !t.archived)
+  const byDomain = {}
+  open.forEach(t => {
+    const key = t.domainTag || 'none'
+    if (!byDomain[key]) byDomain[key] = []
+    byDomain[key].push(t)
+  })
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="sticky top-0 bg-sage-50 z-10 px-4 md:px-8 pt-6 pb-4 border-b border-sage-100">
+        <h2 className="font-display text-2xl text-sage-800">All Tasks</h2>
+        <p className="text-xs text-sage-400 mt-1">{open.length} open task{open.length !== 1 ? 's' : ''}</p>
+      </div>
+      <div className="px-4 md:px-8 py-5 max-w-2xl">
+        {open.length === 0 ? (
+          <div className="text-center py-16 text-sage-300">
+            <p className="text-4xl mb-3">✓</p>
+            <p className="text-sm">No open tasks.</p>
+          </div>
+        ) : (
+          Object.entries(byDomain).map(([key, domTasks]) => {
+            const cfg = key !== 'none' ? DOMAIN_CONFIG[key] : null
+            return (
+              <div key={key} className="mb-6">
+                <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
+                  {cfg ? <><span>{cfg.icon}</span><span>{cfg.label}</span></> : <span>No domain</span>}
+                  <span className="text-sage-400">({domTasks.length})</span>
+                </p>
+                <div className="space-y-2">
+                  {domTasks.map(t => (
+                    <div key={t.id} className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-sage-100 shadow-sm">
+                      <button
+                        onClick={() => toggleDone(t.id)}
+                        className="shrink-0 w-5 h-5 rounded-full border-2 border-sage-300 hover:border-sage-500 flex items-center justify-center transition-colors"
+                      />
+                      <span className="flex-1 text-sm text-sage-800">{t.title}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0
+                        ${t.priority === 'high' ? 'bg-red-50 text-red-600 border-red-200' :
+                          t.priority === 'medium' ? 'bg-clay-50 text-clay-600 border-clay-200' :
+                          'bg-sage-50 text-sage-500 border-sage-200'}`}>
+                        {t.priority}
+                      </span>
+                      {t.dueDate && (
+                        <span className="text-xs text-sage-400 shrink-0">{t.dueDate}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Inner app — has access to all contexts ────────────────────────────────────
 function AppMain() {
-  const { allUsers } = useAuth()
   const { lists } = useTasks()
-  const { projects, households, dbError } = useHouseholds()
+  const { households, dbError } = useHouseholds()
 
   const [activeView,         setActiveView]         = useState('dashboard')
   const [activeListId,       setActiveListId]       = useState(null)
   const [activeHouseholdId,  setActiveHouseholdId]  = useState(null)
-  const [activeProjectId,    setActiveProjectId]    = useState(null)
   const [activeResidentId,   setActiveResidentId]   = useState(null)
   const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
-  const [activeDomain,       setActiveDomain]       = useState('housing')
   const [showAddList,        setShowAddList]        = useState(false)
   const [showQuickTask,      setShowQuickTask]      = useState(false)
   const [sidebarOpen,        setSidebarOpen]        = useState(false)
@@ -53,9 +110,7 @@ function AppMain() {
     setActiveView(view)
     if (params.listId      !== undefined) setActiveListId(params.listId)
     if (params.householdId !== undefined) setActiveHouseholdId(params.householdId)
-    if (params.projectId   !== undefined) setActiveProjectId(params.projectId)
     if (params.residentId  !== undefined) setActiveResidentId(params.residentId)
-    if (params.domain      !== undefined) setActiveDomain(params.domain)
     if (params.tab         !== undefined) setActiveHouseholdTab(params.tab)
     else if (view === 'household')        setActiveHouseholdTab('details')
     setSidebarOpen(false)
@@ -63,25 +118,20 @@ function AppMain() {
 
   function pageTitle() {
     switch (activeView) {
-      case 'dashboard':        return 'Dashboard'
-      case 'my-tasks':         return 'My Tasks'
-      case 'calendar':         return 'Calendar'
-      case 'personal-list':    return lists.find(l => l.id === activeListId)?.name ?? 'List'
-      case 'project-list':     return activeDomain
-          ? activeDomain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-          : 'Project Lists'
-      case 'household':        return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
-      case 'household-list':   return 'Households'
-      case 'resident-list':    return 'Residents'
-      case 'project-list-all': return 'Projects'
-      case 'project':          return projects.find(p => p.id === activeProjectId)?.name ?? 'Project'
-      case 'resident':         return 'Resident'
-      case 'activity':         return 'Activity'
-      case 'profile':          return 'Profile'
-      case 'team':             return 'Team'
-      case 'teams':            return 'Teams'
-      case 'messages':         return 'Messages'
-      default:                 return 'GormBase'
+      case 'dashboard':      return 'Dashboard'
+      case 'my-tasks':       return 'My Tasks'
+      case 'all-tasks':      return 'All Tasks'
+      case 'calendar':       return 'Calendar'
+      case 'personal-list':  return lists.find(l => l.id === activeListId)?.name ?? 'List'
+      case 'household':      return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
+      case 'household-list': return 'Households'
+      case 'resident-list':  return 'Residents'
+      case 'resident':       return 'Resident'
+      case 'activity':       return 'Activity'
+      case 'profile':        return 'Profile'
+      case 'teams':          return 'Teams'
+      case 'messages':       return 'Messages'
+      default:               return 'GormBase'
     }
   }
 
@@ -91,19 +141,18 @@ function AppMain() {
         return <Dashboard navigate={navigate} />
       case 'my-tasks':
         return <MyTasks />
+      case 'all-tasks':
+        return <AllTasksPage />
       case 'calendar':
         return <CalendarPage />
       case 'personal-list':
         return <TaskList listId={activeListId} />
-      case 'project-list':
-        return <ProjectListView domain={activeDomain} navigate={navigate} />
       case 'household':
         return (
           <HouseholdDetail
             householdId={activeHouseholdId}
             initialTab={activeHouseholdTab}
             onBack={() => navigate('household-list')}
-            onSelectProject={id => navigate('project', { projectId: id, householdId: activeHouseholdId })}
             onSelectResident={id => navigate('resident', { residentId: id, householdId: activeHouseholdId })}
           />
         )
@@ -115,30 +164,11 @@ function AppMain() {
             onSelectResident={(residentId, householdId) => navigate('resident', { residentId, householdId })}
           />
         )
-      case 'project-list-all':
-        return <ProjectListPage navigate={navigate} />
-      case 'project': {
-        const project = projects.find(p => p.id === activeProjectId)
-        return (
-          <ProjectDetail
-            projectId={activeProjectId}
-            allUsers={allUsers}
-            onBack={() => {
-              if (project?.residentId) {
-                navigate('resident', { residentId: project.residentId, householdId: activeHouseholdId })
-              } else {
-                navigate('household', { householdId: activeHouseholdId, tab: 'projects' })
-              }
-            }}
-          />
-        )
-      }
       case 'resident':
         return (
           <ResidentProfile
             residentId={activeResidentId}
             onBack={() => navigate('household', { householdId: activeHouseholdId, tab: 'residents' })}
-            onSelectProject={id => navigate('project', { projectId: id, householdId: activeHouseholdId })}
           />
         )
       case 'activity':  return <ActivityFeed />
@@ -197,10 +227,6 @@ function AppMain() {
         <Sidebar
           activeView={activeView}
           activeListId={activeListId}
-          activeHouseholdId={activeHouseholdId}
-          activeProjectId={activeProjectId}
-          activeResidentId={activeResidentId}
-          activeDomain={activeDomain}
           navigate={navigate}
           onAddList={() => setShowAddList(true)}
           onClose={() => setSidebarOpen(false)}

@@ -3,35 +3,33 @@ import { X, Search } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
+import { DOMAIN_CONFIG } from '../lib/domains'
 
-/*
- * Verification SQL (run in Supabase SQL Editor after creating a test task):
- *
- * SELECT t.title, t.project_id, p.project_type, r.legal_name
- * FROM tasks t
- * LEFT JOIN projects p ON t.project_id = p.id
- * LEFT JOIN residents r ON p.resident_id = r.id
- * ORDER BY t.created_at DESC
- * LIMIT 5;
- */
-
-export default function QuickTaskModal({ onClose }) {
+export default function QuickTaskModal({ onClose, prefillResident = null, prefillHousehold = null }) {
   const { currentUser, allUsers } = useAuth()
-  const { addTask } = useTasks()
-  const { residents, projects } = useHouseholds()
+  const { addTask, lists } = useTasks()
+  const { residents, households } = useHouseholds()
 
-  const [title, setTitle]           = useState('')
-  const [residentSearch, setResidentSearch] = useState('')
-  const [selectedResident, setSelectedResident] = useState(null)
-  const [selectedProjectId, setSelectedProjectId] = useState('')
-  const [assignedTo, setAssignedTo] = useState(currentUser?.id ?? '')
-  const [priority, setPriority]     = useState('medium')
-  const [dueDate, setDueDate]       = useState('')
-  const [saving, setSaving]         = useState(false)
+  const [title, setTitle]                     = useState('')
+  const [residentSearch, setResidentSearch]   = useState(
+    prefillResident ? (prefillResident.preferredName || prefillResident.legalName) : ''
+  )
+  const [selectedResident, setSelectedResident] = useState(prefillResident)
+  const [selectedHouseholdId, setSelectedHouseholdId] = useState(
+    prefillHousehold?.id ?? prefillResident?.householdId ?? ''
+  )
+  const [domainTag, setDomainTag]             = useState('')
+  const [listId, setListId]                   = useState('')
+  const [assignedTo, setAssignedTo]           = useState(currentUser?.id ?? '')
+  const [priority, setPriority]               = useState('medium')
+  const [dueDate, setDueDate]                 = useState('')
+  const [saving, setSaving]                   = useState(false)
   const [showResidentList, setShowResidentList] = useState(false)
 
-  // Active (non-archived) residents
   const activeResidents = residents.filter(r => !r.archived)
+  const activeHouseholds = households.filter(h => !h.archived)
+  const personalLists = lists.filter(l => !l.householdId && !l.archived)
+
   const filteredResidents = useMemo(() => {
     if (!residentSearch.trim()) return activeResidents
     const q = residentSearch.toLowerCase()
@@ -41,48 +39,35 @@ export default function QuickTaskModal({ onClose }) {
     )
   }, [activeResidents, residentSearch])
 
-  // Projects for currently selected resident
-  const residentProjects = selectedResident
-    ? projects.filter(p => p.residentId === selectedResident.id && !p.archived && p.status === 'active')
-    : []
-
   function selectResident(r) {
-    // Compute projects using r directly — selectedResident state hasn't updated yet
-    const rProjects = projects.filter(p => p.residentId === r.id && !p.archived && p.status === 'active')
     setSelectedResident(r)
     setResidentSearch(r.preferredName || r.legalName)
-    // Auto-select first project so project_id is pre-filled
-    setSelectedProjectId(rProjects[0]?.id ?? '')
+    setSelectedHouseholdId(r.householdId ?? '')
     setShowResidentList(false)
   }
 
   function clearResident() {
     setSelectedResident(null)
     setResidentSearch('')
-    setSelectedProjectId('')
+    // Only clear household if it was auto-filled from the resident
+    if (!prefillHousehold) setSelectedHouseholdId('')
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!title.trim()) return
     setSaving(true)
-
-    const projectId = selectedProjectId || null
-
-    // Diagnostic: verify project_id before insert
-    console.log('[QuickTaskModal] inserting task with project_id:', projectId,
-      '| resident:', selectedResident?.legalName ?? 'none',
-      '| selectedProjectId state:', selectedProjectId)
-
     try {
       await addTask({
-        title:      title.trim(),
-        projectId,
-        listId:     null,
-        assignedTo: assignedTo || null,
-        createdBy:  currentUser?.id,
+        title:       title.trim(),
+        residentId:  selectedResident?.id ?? null,
+        householdId: selectedHouseholdId || null,
+        domainTag:   domainTag || null,
+        listId:      listId || null,
+        assignedTo:  assignedTo || null,
+        createdBy:   currentUser?.id,
         priority,
-        dueDate:    dueDate || null,
+        dueDate:     dueDate || null,
       })
       onClose()
     } finally {
@@ -95,7 +80,7 @@ export default function QuickTaskModal({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-sage-100">
           <h2 className="font-display text-lg text-sage-800">New Task</h2>
@@ -127,9 +112,10 @@ export default function QuickTaskModal({ onClose }) {
                 onFocus={() => setShowResidentList(true)}
                 placeholder="Search resident…"
                 className={`${inputCls} pl-8`}
+                disabled={!!prefillResident}
               />
             </div>
-            {showResidentList && filteredResidents.length > 0 && (
+            {showResidentList && !prefillResident && filteredResidents.length > 0 && (
               <div className="absolute z-10 w-full bg-white border border-sage-200 rounded-xl shadow-lg mt-1 max-h-40 overflow-y-auto py-1">
                 {filteredResidents.slice(0, 8).map(r => (
                   <button key={r.id} type="button"
@@ -144,26 +130,46 @@ export default function QuickTaskModal({ onClose }) {
             )}
           </div>
 
-          {/* Project dropdown — shown when resident is selected */}
-          {selectedResident && (
+          {/* Household dropdown */}
+          <div>
+            <label className={labelCls}>Household (optional)</label>
+            <select
+              value={selectedHouseholdId}
+              onChange={e => setSelectedHouseholdId(e.target.value)}
+              className={inputCls}
+              disabled={!!selectedResident}
+            >
+              <option value="">— No household —</option>
+              {activeHouseholds.map(h => (
+                <option key={h.id} value={h.id}>{h.name}</option>
+              ))}
+            </select>
+            {selectedResident && (
+              <p className="text-xs text-sage-400 mt-1">Auto-filled from resident's household.</p>
+            )}
+          </div>
+
+          {/* Domain tag */}
+          <div>
+            <label className={labelCls}>Domain (optional)</label>
+            <select value={domainTag} onChange={e => setDomainTag(e.target.value)} className={inputCls}>
+              <option value="">— No domain —</option>
+              {Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* List */}
+          {personalLists.length > 0 && (
             <div>
-              <label className={labelCls}>Project</label>
-              {residentProjects.length === 0 ? (
-                <p className="text-xs text-sage-400 py-2">
-                  No active projects for this resident. Task will be saved without a project.
-                </p>
-              ) : (
-                <select
-                  value={selectedProjectId}
-                  onChange={e => setSelectedProjectId(e.target.value)}
-                  className={inputCls}
-                >
-                  <option value="">— No project (personal task) —</option>
-                  {residentProjects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              )}
+              <label className={labelCls}>Add to list (optional)</label>
+              <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
+                <option value="">— No list —</option>
+                {personalLists.map(l => (
+                  <option key={l.id} value={l.id}>{l.icon} {l.name}</option>
+                ))}
+              </select>
             </div>
           )}
 

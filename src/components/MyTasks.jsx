@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, AlertCircle, Clock, Calendar } from 'lucide-react'
+import { Check, AlertCircle, Clock, Calendar, Minus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
+import { DOMAIN_CONFIG } from '../lib/domains'
 
 const PRIORITY_STYLES = {
   high:   'bg-red-50 text-red-600 border-red-200',
@@ -31,14 +32,16 @@ function isDueThisWeek(dueDate) {
 }
 
 function getTaskContext(task) {
-  if (task.project) {
-    const r = task.project.resident
-    if (r) {
-      const name = r.preferred_name || r.legal_name
-      const type = (task.project.project_type ?? '').replace(/_/g, ' ')
-      return `${name} · ${type}`
-    }
-    return task.project.project_type ?? 'Project'
+  if (task.resident?.legal_name) {
+    const name = task.resident.preferred_name || task.resident.legal_name
+    const domain = task.domain_tag ? (DOMAIN_CONFIG[task.domain_tag]?.label ?? task.domain_tag) : null
+    return domain ? `${name} · ${domain}` : name
+  }
+  if (task.household?.name) {
+    return task.household.name
+  }
+  if (task.domain_tag) {
+    return DOMAIN_CONFIG[task.domain_tag]?.label ?? task.domain_tag
   }
   return 'Personal task'
 }
@@ -105,7 +108,7 @@ function Section({ icon: Icon, label, color, tasks, onToggle }) {
 
 export default function MyTasks() {
   const { currentUser } = useAuth()
-  const { updateTask } = useTasks()  // for toggling done (writes back to context + DB)
+  const { updateTask } = useTasks()
 
   const [tasks, setTasks] = useState([])
   const [doneTasks, setDoneTasks] = useState([])
@@ -120,11 +123,9 @@ export default function MyTasks() {
     const { data, error } = await supabase
       .from('tasks')
       .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived,
-        project:projects(
-          project_type, resident_id,
-          resident:residents(legal_name, preferred_name)
-        )
+        id, title, status, priority, due_date, assigned_to, created_by, archived, domain_tag,
+        resident:residents(legal_name, preferred_name),
+        household:households(name)
       `)
       .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
       .eq('archived', false)
@@ -149,11 +150,9 @@ export default function MyTasks() {
     const { data } = await supabase
       .from('tasks')
       .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived,
-        project:projects(
-          project_type, resident_id,
-          resident:residents(legal_name, preferred_name)
-        )
+        id, title, status, priority, due_date, assigned_to, created_by, archived, domain_tag,
+        resident:residents(legal_name, preferred_name),
+        household:households(name)
       `)
       .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
       .eq('archived', false)
@@ -166,14 +165,14 @@ export default function MyTasks() {
   async function handleToggle(taskId, currentStatus) {
     const newStatus = currentStatus === 'done' ? 'todo' : 'done'
     await updateTask(taskId, { status: newStatus })
-    // Re-fetch to keep both lists fresh
     await fetchMyTasks()
     if (showDone) await loadDoneTasks()
   }
 
-  const overdue  = tasks.filter(t => isOverdue(t.due_date))
-  const thisWeek = tasks.filter(t => isDueThisWeek(t.due_date))
-  const upcoming = tasks.filter(t => !isOverdue(t.due_date) && !isDueThisWeek(t.due_date))
+  const overdue   = tasks.filter(t => isOverdue(t.due_date))
+  const thisWeek  = tasks.filter(t => isDueThisWeek(t.due_date))
+  const upcoming  = tasks.filter(t => t.due_date && !isOverdue(t.due_date) && !isDueThisWeek(t.due_date))
+  const noDueDate = tasks.filter(t => !t.due_date)
 
   const openCount = tasks.length
 
@@ -204,9 +203,10 @@ export default function MyTasks() {
           </div>
         ) : (
           <>
-            <Section icon={AlertCircle} label="Overdue"       color="text-red-500"   tasks={overdue}  onToggle={handleToggle} />
-            <Section icon={Clock}       label="Due This Week" color="text-clay-600"  tasks={thisWeek} onToggle={handleToggle} />
-            <Section icon={Calendar}    label="Upcoming"      color="text-sage-500"  tasks={upcoming} onToggle={handleToggle} />
+            <Section icon={AlertCircle} label="Overdue"       color="text-red-500"   tasks={overdue}   onToggle={handleToggle} />
+            <Section icon={Clock}       label="Due This Week" color="text-clay-600"  tasks={thisWeek}  onToggle={handleToggle} />
+            <Section icon={Calendar}    label="Upcoming"      color="text-sage-500"  tasks={upcoming}  onToggle={handleToggle} />
+            <Section icon={Minus}       label="No Due Date"   color="text-sage-400"  tasks={noDueDate} onToggle={handleToggle} />
           </>
         )}
 

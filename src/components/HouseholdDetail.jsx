@@ -1,10 +1,18 @@
 import React, { useState } from 'react'
-import { Plus, ArrowLeft, Save, MoreVertical, Archive, Trash2, RotateCcw } from 'lucide-react'
+import { Plus, ArrowLeft, Save, MoreVertical, Archive, Trash2, RotateCcw, Check, Calendar } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { useTasks } from '../contexts/TaskContext'
 import ResidentRegistrationModal from './ResidentRegistrationModal'
 import NotesPanel from './NotesPanel'
+import QuickTaskModal from './QuickTaskModal'
+import { DOMAIN_CONFIG } from '../lib/domains'
+
+const PRIORITY_STYLES = {
+  high:   'bg-red-50 text-red-600 border-red-200',
+  medium: 'bg-clay-50 text-clay-600 border-clay-200',
+  low:    'bg-sage-50 text-sage-500 border-sage-200',
+}
 
 const PROPERTY_TYPES = [
   { value: 'apartment', label: 'Apartment' },
@@ -152,12 +160,12 @@ function ResidentCard({ resident, projects, onClick, onArchive, onRestore, onDel
   )
 }
 
-export default function HouseholdDetail({ householdId, initialTab = 'details', onBack, onSelectProject, onSelectResident }) {
+export default function HouseholdDetail({ householdId, initialTab = 'details', onBack, onSelectResident }) {
   const { isAdmin } = useAuth()
   const { households, projects, residents, updateHousehold, addProject,
           archiveProject, restoreProject, deleteProject,
           archiveResident, restoreResident, deleteResident } = useHouseholds()
-  const { tasks } = useTasks()
+  const { tasks, toggleDone } = useTasks()
 
   const [tab, setTab] = useState(initialTab)
   React.useEffect(() => { setTab(initialTab) }, [initialTab])
@@ -165,10 +173,12 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
   const [showAddProject, setShowAddProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [showAddResident, setShowAddResident] = useState(false)
+  const [showAddTask, setShowAddTask] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState(null)
   const [showArchivedResidents, setShowArchivedResidents] = useState(false)
   const [showArchivedProjects, setShowArchivedProjects] = useState(false)
+  const [showDoneTasks, setShowDoneTasks] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null) // { type, id, name }
 
   const household = households.find(h => h.id === householdId)
@@ -241,7 +251,7 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-sage-100 mb-6">
-        {['details', 'residents', 'projects', 'notes'].map(t => (
+        {['details', 'residents', 'tasks', 'projects', 'notes'].map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -373,6 +383,112 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
         </div>
       )}
 
+      {/* ── Tasks tab ── */}
+      {tab === 'tasks' && (() => {
+        const hResidentIds = new Set(residents.filter(r => r.householdId === householdId).map(r => r.id))
+        const householdTasks = tasks.filter(t =>
+          !t.archived && (t.householdId === householdId || hResidentIds.has(t.residentId))
+        )
+        const openTasks = householdTasks.filter(t => t.status !== 'done')
+        const doneTasks = householdTasks.filter(t => t.status === 'done')
+
+        const tasksByDomain = {}
+        openTasks.forEach(t => {
+          const key = t.domainTag || 'none'
+          if (!tasksByDomain[key]) tasksByDomain[key] = []
+          tasksByDomain[key].push(t)
+        })
+
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-sage-500">{openTasks.length} open task{openTasks.length !== 1 ? 's' : ''}</p>
+              <button
+                onClick={() => setShowAddTask(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-sm"
+              >
+                <Plus size={16} /> Add Task
+              </button>
+            </div>
+
+            {openTasks.length === 0 && doneTasks.length === 0 ? (
+              <div className="text-center py-20 text-sage-300">
+                <p className="text-4xl mb-3">📋</p>
+                <p className="text-sm">No tasks for this household yet.</p>
+              </div>
+            ) : (
+              <>
+                {Object.entries(tasksByDomain).map(([key, domTasks]) => {
+                  const cfg = key !== 'none' ? DOMAIN_CONFIG[key] : null
+                  return (
+                    <div key={key} className="mb-5">
+                      {cfg ? (
+                        <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
+                          <span>{cfg.icon}</span><span>{cfg.label}</span>
+                          <span className="text-sage-400">({domTasks.length})</span>
+                        </p>
+                      ) : (
+                        <p className="text-xs font-semibold text-sage-400 mb-2">No domain ({domTasks.length})</p>
+                      )}
+                      <div className="space-y-2 max-w-2xl">
+                        {domTasks.map(t => (
+                          <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 bg-white rounded-xl border border-sage-100 shadow-sm">
+                            <button
+                              onClick={() => toggleDone(t.id)}
+                              className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
+                                ${t.status === 'done' ? 'bg-sage-400 border-sage-400' : 'border-sage-300 hover:border-sage-500'}`}
+                            >
+                              {t.status === 'done' && <Check size={11} className="text-white" />}
+                            </button>
+                            <span className={`flex-1 text-sm ${t.status === 'done' ? 'line-through text-sage-300' : 'text-sage-800'}`}>
+                              {t.title}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0 ${PRIORITY_STYLES[t.priority]}`}>
+                              {t.priority}
+                            </span>
+                            {t.dueDate && (
+                              <span className="text-xs text-sage-400 flex items-center gap-1 shrink-0">
+                                <Calendar size={11} />{t.dueDate}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {doneTasks.length > 0 && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setShowDoneTasks(v => !v)}
+                      className="text-xs text-sage-400 hover:text-sage-600 transition-colors mb-2"
+                    >
+                      {showDoneTasks ? '▾' : '▸'} {doneTasks.length} completed
+                    </button>
+                    {showDoneTasks && (
+                      <div className="space-y-2 max-w-2xl opacity-60">
+                        {doneTasks.map(t => (
+                          <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 bg-white rounded-xl border border-sage-100 shadow-sm">
+                            <button
+                              onClick={() => toggleDone(t.id)}
+                              className="shrink-0 w-5 h-5 rounded-full border-2 bg-sage-400 border-sage-400 flex items-center justify-center"
+                            >
+                              <Check size={11} className="text-white" />
+                            </button>
+                            <span className="flex-1 text-sm line-through text-sage-300">{t.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ── Projects tab ── */}
       {tab === 'projects' && (
         <div>
@@ -414,55 +530,39 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {visibleProjects.map(p => {
-                const pt = tasks.filter(t => t.projectId === p.id)
-                const done = pt.filter(t => t.status === 'done').length
-                const pct = pt.length > 0 ? Math.round((done / pt.length) * 100) : 0
-                return (
-                  <div key={p.id} className={`relative bg-white rounded-xl border shadow-sm
-                    ${p.archived ? 'opacity-60 border-sage-200' : 'border-sage-100 hover:shadow-md transition-shadow'}`}
-                  >
-                    <div className="absolute top-4 right-4 z-10">
-                      <ThreeDotMenu
-                        archived={p.archived}
-                        onArchive={() => archiveProject(p.id)}
-                        onRestore={() => restoreProject(p.id)}
-                        onDelete={() => setConfirmDelete({ type: 'project', id: p.id, name: p.name })}
-                        isAdmin={isAdmin()}
-                      />
-                    </div>
-                    <button
-                      onClick={() => !p.archived && onSelectProject(p.id)}
-                      className="w-full text-left p-5 pr-12"
-                    >
-                      {p.archived && (
-                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-sage-100 text-sage-500 rounded-full mb-2">
-                          <Archive size={10} /> Archived
-                        </span>
-                      )}
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-semibold text-sage-800 flex-1 pr-2">{p.name}</h3>
-                        <span className={`text-xs px-2 py-0.5 rounded-full capitalize shrink-0
-                          ${p.status === 'active' ? 'bg-sage-100 text-sage-600' :
-                            p.status === 'completed' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}
-                        >
-                          {p.status}
-                        </span>
-                      </div>
-                      {p.description && <p className="text-xs text-sage-500 mb-3 line-clamp-2">{p.description}</p>}
-                      <div className="flex gap-3 text-xs text-sage-400 mb-3">
-                        <span>{pt.filter(t => t.status !== 'done').length} open</span>
-                        <span>·</span>
-                        <span>{done} done</span>
-                        {p.dueDate && <span>· Due {p.dueDate}</span>}
-                      </div>
-                      <div className="h-1.5 bg-sage-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-sage-500 rounded-full" style={{ width: `${pct}%` }} />
-                      </div>
-                    </button>
+              {visibleProjects.map(p => (
+                <div key={p.id} className={`relative bg-white rounded-xl border shadow-sm
+                  ${p.archived ? 'opacity-60 border-sage-200' : 'border-sage-100'}`}
+                >
+                  <div className="absolute top-4 right-4 z-10">
+                    <ThreeDotMenu
+                      archived={p.archived}
+                      onArchive={() => archiveProject(p.id)}
+                      onRestore={() => restoreProject(p.id)}
+                      onDelete={() => setConfirmDelete({ type: 'project', id: p.id, name: p.name })}
+                      isAdmin={isAdmin()}
+                    />
                   </div>
-                )
-              })}
+                  <div className="w-full text-left p-5 pr-12">
+                    {p.archived && (
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-sage-100 text-sage-500 rounded-full mb-2">
+                        <Archive size={10} /> Archived
+                      </span>
+                    )}
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-semibold text-sage-800 flex-1 pr-2">{p.name}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full capitalize shrink-0
+                        ${p.status === 'active' ? 'bg-sage-100 text-sage-600' :
+                          p.status === 'completed' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}
+                      >
+                        {p.status}
+                      </span>
+                    </div>
+                    {p.description && <p className="text-xs text-sage-500 line-clamp-2">{p.description}</p>}
+                    {p.dueDate && <p className="text-xs text-sage-400 mt-1">Due {p.dueDate}</p>}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -491,6 +591,13 @@ export default function HouseholdDetail({ householdId, initialTab = 'details', o
           householdId={householdId}
           onClose={() => setShowAddResident(false)}
           onSaved={() => setShowAddResident(false)}
+        />
+      )}
+
+      {showAddTask && (
+        <QuickTaskModal
+          prefillHousehold={household}
+          onClose={() => setShowAddTask(false)}
         />
       )}
 

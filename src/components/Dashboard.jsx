@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
-import { DOMAIN_CONFIG } from './ProjectListView'
+import { DOMAIN_CONFIG } from '../lib/domains'
 import {
   BarChart, Bar,
   PieChart, Pie, Cell,
@@ -36,11 +36,12 @@ function greeting() {
 export default function Dashboard({ navigate }) {
   const { currentUser, allUsers } = useAuth()
   const { tasks } = useTasks()
-  const { households, projects, residents, activity } = useHouseholds()
+  const { households, residents, activity } = useHouseholds()
   const [chartType, setChartType] = useState('bar')
 
   const myOpen = tasks.filter(t => t.assignedTo === currentUser?.id && t.status !== 'done' && !t.archived).length
   const myDone = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === 'done').length
+  const totalOpen = tasks.filter(t => t.status !== 'done' && !t.archived).length
 
   // Per-user progress cards
   const userStats = allUsers.map(u => ({
@@ -49,10 +50,10 @@ export default function Dashboard({ navigate }) {
     done: tasks.filter(t => t.assignedTo === u.id && t.status === 'done').length,
   }))
 
-  // Household task data
+  // Household task data (by householdId or via resident)
   const householdData = households.map(h => {
-    const ids = new Set(projects.filter(p => p.householdId === h.id).map(p => p.id))
-    const ht = tasks.filter(t => ids.has(t.projectId))
+    const residentIds = new Set(residents.filter(r => r.householdId === h.id).map(r => r.id))
+    const ht = tasks.filter(t => t.householdId === h.id || residentIds.has(t.residentId))
     return {
       name: shorten(h.name),
       done: ht.filter(t => t.status === 'done').length,
@@ -61,10 +62,9 @@ export default function Dashboard({ navigate }) {
     }
   }).filter(d => d.total > 0)
 
-  // Domain task data (by project type)
+  // Domain task data (by domain_tag)
   const domainData = Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => {
-    const domainProjectIds = new Set(projects.filter(p => p.projectType === key).map(p => p.id))
-    const dt = tasks.filter(t => domainProjectIds.has(t.projectId))
+    const dt = tasks.filter(t => t.domainTag === key && !t.archived)
     return {
       name: cfg.label,
       done: dt.filter(t => t.status === 'done').length,
@@ -73,22 +73,11 @@ export default function Dashboard({ navigate }) {
     }
   }).filter(d => d.total > 0)
 
-  // Gantt data: project completion bars
-  const ganttData = projects
-    .filter(p => p.status !== 'archived')
-    .map(p => {
-      const pt = tasks.filter(t => t.projectId === p.id)
-      const done = pt.filter(t => t.status === 'done').length
-      const pct = pt.length > 0 ? Math.round((done / pt.length) * 100) : 0
-      return { name: shorten(p.name, 20), progress: pct, remaining: 100 - pct }
-    })
-
   // Recent activity — last 10 entries
   const recentActivity = activity.slice(0, 10)
 
   const activeHouseholds = households.filter(h => !h.archived).length
   const activeResidents = residents.filter(r => !r.archived).length
-  const activeProjects = projects.filter(p => !p.archived).length
 
   return (
     <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
@@ -122,12 +111,12 @@ export default function Dashboard({ navigate }) {
           <p className="text-xs text-sage-400 mt-0.5">{activeResidents} active</p>
         </button>
         <button
-          onClick={() => navigate('project-list-all')}
+          onClick={() => navigate('all-tasks')}
           className="bg-white rounded-xl border border-sage-100 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
         >
           <p className="text-2xl mb-2">📋</p>
-          <p className="text-sm font-semibold text-sage-800">Projects</p>
-          <p className="text-xs text-sage-400 mt-0.5">{activeProjects} active</p>
+          <p className="text-sm font-semibold text-sage-800">Tasks</p>
+          <p className="text-xs text-sage-400 mt-0.5">{totalOpen} open</p>
         </button>
       </div>
 
@@ -171,7 +160,6 @@ export default function Dashboard({ navigate }) {
                 ['bar',    'By Household'],
                 ['domain', 'By Domain'],
                 ['pie',    'Distribution'],
-                ['gantt',  'Projects'],
               ].map(([type, label]) => (
                 <button
                   key={type}
@@ -188,11 +176,8 @@ export default function Dashboard({ navigate }) {
           {chartType === 'domain' && domainData.length === 0 && (
             <p className="text-center text-sage-300 text-sm py-12">No domain task data yet.</p>
           )}
-          {chartType !== 'domain' && chartType !== 'gantt' && householdData.length === 0 && (
+          {chartType !== 'domain' && householdData.length === 0 && (
             <p className="text-center text-sage-300 text-sm py-12">No household task data yet.</p>
-          )}
-          {chartType === 'gantt' && ganttData.length === 0 && (
-            <p className="text-center text-sage-300 text-sm py-12">No projects yet.</p>
           )}
 
           {chartType === 'domain' && domainData.length > 0 && (
@@ -237,32 +222,6 @@ export default function Dashboard({ navigate }) {
                 </Pie>
                 <Tooltip />
               </PieChart>
-            </ResponsiveContainer>
-          )}
-
-          {chartType === 'gantt' && ganttData.length > 0 && (
-            <ResponsiveContainer width="100%" height={Math.max(200, ganttData.length * 44)}>
-              <BarChart
-                data={ganttData}
-                layout="vertical"
-                margin={{ top: 5, right: 40, bottom: 5, left: 10 }}
-              >
-                <XAxis
-                  type="number"
-                  domain={[0, 100]}
-                  tickFormatter={v => `${v}%`}
-                  tick={{ fontSize: 11, fill: '#6d9f6d' }}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={140}
-                  tick={{ fontSize: 11, fill: '#4a7c4a' }}
-                />
-                <Tooltip formatter={(v, name) => [`${v}%`, name === 'progress' ? 'Complete' : 'Remaining']} />
-                <Bar dataKey="progress"  name="progress"  stackId="a" fill="#4a7c4a" />
-                <Bar dataKey="remaining" name="remaining" stackId="a" fill="#e8f0e8" radius={[0, 4, 4, 0]} />
-              </BarChart>
             </ResponsiveContainer>
           )}
         </div>

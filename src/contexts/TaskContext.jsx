@@ -7,6 +7,9 @@ import { useAuth } from './AuthContext'
 // ─── Context ──────────────────────────────────────────────────────────────────
 // Exposes: tasks, lists, loading
 //          addTask, updateTask, deleteTask, archiveTask, toggleDone, addList
+//
+// Task data model (v2 — no project_id):
+//   resident_id, household_id, domain_tag, list_id
 
 const TaskContext = createContext(null)
 
@@ -14,7 +17,9 @@ function mapTask(row) {
   return {
     id: row.id,
     listId: row.list_id,
-    projectId: row.project_id ?? null,
+    residentId: row.resident_id ?? null,
+    householdId: row.household_id ?? null,
+    domainTag: row.domain_tag ?? '',
     title: row.title,
     assignedTo: row.assigned_to,
     createdBy: row.created_by,
@@ -58,28 +63,20 @@ export function TaskProvider({ children }) {
   }, [])
 
   async function addTask(task) {
-    // Explicitly map every field so nothing gets silently dropped.
-    // project_id is critical — it links the task to a domain/resident project.
     const insertData = {
-      list_id:     task.listId     ?? null,
-      project_id:  task.projectId  ?? null,
-      title:       task.title,
-      assigned_to: task.assignedTo ?? null,
-      created_by:  task.createdBy  ?? currentUser?.id,
-      priority:    task.priority   ?? 'medium',
-      status:      'todo',
-      due_date:    task.dueDate    ?? null,
-      notes:       task.notes      ?? '',
-      archived:    false,
+      list_id:      task.listId      ?? null,
+      resident_id:  task.residentId  ?? null,
+      household_id: task.householdId ?? null,
+      domain_tag:   task.domainTag   ?? null,
+      title:        task.title,
+      assigned_to:  task.assignedTo  ?? null,
+      created_by:   task.createdBy   ?? currentUser?.id,
+      priority:     task.priority    ?? 'medium',
+      status:       'todo',
+      due_date:     task.dueDate     ?? null,
+      notes:        task.notes       ?? '',
+      archived:     false,
     }
-
-    // Diagnostic log — visible in browser console while debugging project_id saves
-    console.log('[addTask] insert →', {
-      project_id:  insertData.project_id,
-      list_id:     insertData.list_id,
-      title:       insertData.title,
-      assigned_to: insertData.assigned_to,
-    })
 
     const { data, error } = await supabase
       .from('tasks')
@@ -89,10 +86,8 @@ export function TaskProvider({ children }) {
 
     if (error) throw error
     const newTask = mapTask(data)
-    console.log('[addTask] saved row →', { id: data.id, project_id: data.project_id })
     setTasks(prev => [newTask, ...prev])
     await logActivity(supabase, currentUser?.id, 'created', 'task', newTask.id, newTask.title)
-    // Google Calendar stub — will no-op until configured
     if (newTask.dueDate && !newTask.googleEventId) {
       await createEvent(newTask)
     }
@@ -102,13 +97,17 @@ export function TaskProvider({ children }) {
   async function updateTask(id, changes) {
     const task = tasks.find(t => t.id === id)
     const dbChanges = {}
-    if ('title'      in changes) dbChanges.title       = changes.title
-    if ('assignedTo' in changes) dbChanges.assigned_to = changes.assignedTo
-    if ('priority'   in changes) dbChanges.priority    = changes.priority
-    if ('status'     in changes) dbChanges.status      = changes.status
-    if ('dueDate'    in changes) dbChanges.due_date    = changes.dueDate
-    if ('notes'      in changes) dbChanges.notes       = changes.notes
-    if ('archived'   in changes) dbChanges.archived    = changes.archived
+    if ('title'       in changes) dbChanges.title        = changes.title
+    if ('assignedTo'  in changes) dbChanges.assigned_to  = changes.assignedTo
+    if ('priority'    in changes) dbChanges.priority     = changes.priority
+    if ('status'      in changes) dbChanges.status       = changes.status
+    if ('dueDate'     in changes) dbChanges.due_date     = changes.dueDate
+    if ('notes'       in changes) dbChanges.notes        = changes.notes
+    if ('archived'    in changes) dbChanges.archived     = changes.archived
+    if ('residentId'  in changes) dbChanges.resident_id  = changes.residentId
+    if ('householdId' in changes) dbChanges.household_id = changes.householdId
+    if ('domainTag'   in changes) dbChanges.domain_tag   = changes.domainTag
+    if ('listId'      in changes) dbChanges.list_id      = changes.listId
     const { error } = await supabase.from('tasks').update(dbChanges).eq('id', id)
     if (error) throw error
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...changes } : t))

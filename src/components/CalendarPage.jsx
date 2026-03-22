@@ -6,6 +6,7 @@ import { enUS } from 'date-fns/locale'
 import { X, Calendar as CalendarIcon } from 'lucide-react'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
+import { DOMAIN_CONFIG } from '../lib/domains'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css'
 
@@ -13,16 +14,16 @@ const locales = { 'en-US': enUS }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
 const DnDCalendar = withDragAndDrop(Calendar)
 
-// Domain → color mapping (matches ProjectListView)
+// Domain → calendar color mapping
 const DOMAIN_COLORS = {
-  housing:           { bg: '#22c55e', text: '#fff' },  // green
-  clinical:          { bg: '#3b82f6', text: '#fff' },  // blue
-  behavioral_health: { bg: '#14b8a6', text: '#fff' },  // teal
-  justice:           { bg: '#f97316', text: '#fff' },  // orange
-  care_coordination: { bg: '#6366f1', text: '#fff' },  // indigo
-  benefits:          { bg: '#a855f7', text: '#fff' },  // purple
-  personal:          { bg: '#f59e0b', text: '#fff' },  // amber (personal lists)
-  default:           { bg: '#94a3b8', text: '#fff' },  // slate
+  housing:           { bg: '#22c55e', text: '#fff' },
+  clinical:          { bg: '#3b82f6', text: '#fff' },
+  behavioral_health: { bg: '#14b8a6', text: '#fff' },
+  justice:           { bg: '#f97316', text: '#fff' },
+  care_coordination: { bg: '#6366f1', text: '#fff' },
+  benefits:          { bg: '#a855f7', text: '#fff' },
+  personal:          { bg: '#f59e0b', text: '#fff' },
+  default:           { bg: '#94a3b8', text: '#fff' },
 }
 
 function GoogleCalModal({ onClose }) {
@@ -65,7 +66,7 @@ function GoogleCalModal({ onClose }) {
 
 export default function CalendarPage() {
   const { tasks, updateTask } = useTasks()
-  const { projects, residents, households } = useHouseholds()
+  const { residents, households } = useHouseholds()
   const [view, setView] = useState('month')
   const [date, setDate] = useState(new Date())
   const [residentFilter, setResidentFilter] = useState('')
@@ -78,17 +79,14 @@ export default function CalendarPage() {
     return tasks
       .filter(t => t.dueDate && !t.archived)
       .filter(t => {
-        if (!residentFilter && !householdFilter && !domainFilter) return true
-        const project = t.projectId ? projects.find(p => p.id === t.projectId) : null
-        if (residentFilter && project?.residentId !== residentFilter) return false
-        if (householdFilter && project?.householdId !== householdFilter) return false
-        if (domainFilter && project?.projectType !== domainFilter) return false
+        if (residentFilter  && t.residentId  !== residentFilter)  return false
+        if (householdFilter && t.householdId !== householdFilter) return false
+        if (domainFilter    && t.domainTag   !== domainFilter)    return false
         return true
       })
       .map(t => {
         const d = new Date(t.dueDate + 'T12:00:00')
-        const project = t.projectId ? projects.find(p => p.id === t.projectId) : null
-        const domain = project?.projectType ?? (t.listId ? 'personal' : 'default')
+        const domain = t.domainTag || (t.listId ? 'personal' : 'default')
         return {
           id: t.id,
           title: t.title,
@@ -98,7 +96,7 @@ export default function CalendarPage() {
           resource: { task: t, domain },
         }
       })
-  }, [tasks, projects, residentFilter, householdFilter, domainFilter])
+  }, [tasks, residentFilter, householdFilter, domainFilter])
 
   function eventPropGetter(event) {
     const colors = DOMAIN_COLORS[event.resource.domain] ?? DOMAIN_COLORS.default
@@ -161,13 +159,10 @@ export default function CalendarPage() {
           </select>
 
           <select value={domainFilter} onChange={e => setDomainFilter(e.target.value)} className={selectClass}>
-            <option value="">All Project Types</option>
-            <option value="housing">🏠 Housing</option>
-            <option value="clinical">🏥 Clinical</option>
-            <option value="behavioral_health">🧠 Behavioral Health</option>
-            <option value="justice">⚖️ Justice</option>
-            <option value="care_coordination">🤝 Care Coordination</option>
-            <option value="benefits">📋 Benefits</option>
+            <option value="">All Domains</option>
+            {Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => (
+              <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+            ))}
           </select>
 
           {(residentFilter || householdFilter || domainFilter) && (

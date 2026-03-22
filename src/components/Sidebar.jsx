@@ -7,7 +7,6 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
-import { DOMAIN_CONFIG } from './ProjectListView'
 import { getFavorites, removeFavorite, addFavorite } from '../lib/favorites'
 
 function SidebarAvatar({ name }) {
@@ -29,7 +28,7 @@ function SidebarAvatar({ name }) {
 }
 
 export default function Sidebar({
-  activeView, activeListId, activeHouseholdId, activeProjectId, activeResidentId, activeDomain,
+  activeView, activeListId,
   navigate, onAddList, onClose,
 }) {
   const { currentUser, signOut, isAdmin } = useAuth()
@@ -37,12 +36,10 @@ export default function Sidebar({
   const { households, residents } = useHouseholds()
 
   const [listsOpen, setListsOpen] = useState(true)
-  const [projectListsOpen, setProjectListsOpen] = useState(true)
   const [favorites, setFavorites] = useState([])
   const [showPinSearch, setShowPinSearch] = useState(false)
   const [pinSearch, setPinSearch] = useState('')
 
-  // Load favorites on mount / user change
   useEffect(() => {
     if (!currentUser?.id) return
     getFavorites(currentUser.id).then(setFavorites)
@@ -135,6 +132,11 @@ export default function Sidebar({
         <button onClick={() => navigate('calendar')} className={navClass(activeView === 'calendar')}>
           <Calendar size={16} />
           <span>Calendar</span>
+        </button>
+
+        <button onClick={() => navigate('messages')} className={navClass(activeView === 'messages')}>
+          <MessageSquare size={16} />
+          <span>Messages</span>
         </button>
 
         {/* Personal Lists — collapsible */}
@@ -245,42 +247,9 @@ export default function Sidebar({
           </button>
         )}
 
-        {/* ── Project Lists ────────────────────────── */}
-        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Project Lists</p>
-
-        <button
-          onClick={() => setProjectListsOpen(v => !v)}
-          className="w-full flex items-center gap-3 px-3 py-1 rounded-lg text-sm text-sage-500 hover:bg-sage-50 transition-colors mb-0.5"
-        >
-          <span className="flex-1 text-left text-xs text-sage-400">By domain</span>
-          {projectListsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </button>
-
-        {projectListsOpen && (
-          <div className="ml-2 mb-1">
-            {Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => (
-              <button
-                key={key}
-                onClick={() => navigate('project-list', { domain: key })}
-                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
-                  ${activeView === 'project-list' && activeDomain === key
-                    ? 'bg-sage-100 text-sage-800 font-medium'
-                    : 'text-sage-500 hover:bg-sage-50'}`}
-              >
-                <span className="text-sm leading-none">{cfg.icon}</span>
-                <span className="truncate">{cfg.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* ── More ──────────────────────────────────── */}
         <div className="mt-4">
           <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1">More</p>
-          <button onClick={() => navigate('messages')} className={navClass(activeView === 'messages')}>
-            <MessageSquare size={16} />
-            <span>Messages</span>
-          </button>
           <button onClick={() => navigate('teams')} className={navClass(activeView === 'teams')}>
             <Users size={16} />
             <span>Teams</span>

@@ -1,13 +1,18 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Eye, EyeOff, Edit2, MoreVertical, Archive, Trash2, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Edit2, Check, Calendar, Plus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { useTasks } from '../contexts/TaskContext'
 import ResidentRegistrationModal from './ResidentRegistrationModal'
 import NotesPanel from './NotesPanel'
+import QuickTaskModal from './QuickTaskModal'
+import { DOMAIN_CONFIG } from '../lib/domains'
 
-const STATUS_COLS = ['todo', 'in_progress', 'done']
-const STATUS_LABELS = { todo: 'To Do', in_progress: 'In Progress', done: 'Done' }
+const PRIORITY_STYLES = {
+  high:   'bg-red-50 text-red-600 border-red-200',
+  medium: 'bg-clay-50 text-clay-600 border-clay-200',
+  low:    'bg-sage-50 text-sage-500 border-sage-200',
+}
 
 function Section({ title, children }) {
   return (
@@ -28,22 +33,6 @@ function InfoRow({ label, value }) {
   )
 }
 
-function ConfirmModal({ name, onConfirm, onCancel }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        <h3 className="font-display text-lg text-sage-800 mb-2">Delete project?</h3>
-        <p className="text-sm text-sage-600 mb-1">"{name}"</p>
-        <p className="text-sm text-sage-400 mb-6">This cannot be undone. All tasks will be deleted.</p>
-        <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 px-4 py-2 text-sm border border-sage-200 rounded-xl text-sage-600 hover:bg-sage-50">Cancel</button>
-          <button onClick={onConfirm} className="flex-1 px-4 py-2 text-sm bg-red-500 text-white rounded-xl font-semibold hover:bg-red-600">Delete</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function timeAgo(dateStr) {
   if (!dateStr) return ''
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -55,32 +44,60 @@ function timeAgo(dateStr) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-export default function ResidentProfile({ residentId, onBack, onSelectProject }) {
+function TaskItem({ task, onToggle }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 bg-white rounded-xl border border-sage-100 shadow-sm">
+      <button
+        onClick={() => onToggle(task.id)}
+        className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
+          ${task.status === 'done' ? 'bg-sage-400 border-sage-400' : 'border-sage-300 hover:border-sage-500'}`}
+      >
+        {task.status === 'done' && <Check size={11} className="text-white" />}
+      </button>
+      <span className={`flex-1 text-sm ${task.status === 'done' ? 'line-through text-sage-300' : 'text-sage-800'}`}>
+        {task.title}
+      </span>
+      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0 ${PRIORITY_STYLES[task.priority]}`}>
+        {task.priority}
+      </span>
+      {task.dueDate && (
+        <span className="text-xs text-sage-400 flex items-center gap-1 shrink-0">
+          <Calendar size={11} />
+          {task.dueDate}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export default function ResidentProfile({ residentId, onBack }) {
   const { isAdmin } = useAuth()
-  const { residents, projects, households, activity, archiveProject, restoreProject, deleteProject } = useHouseholds()
-  const { tasks } = useTasks()
+  const { residents, households, activity } = useHouseholds()
+  const { tasks, toggleDone } = useTasks()
   const [tab, setTab] = useState('overview')
   const [showSensitive, setShowSensitive] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(null)
-  const [showArchivedProjects, setShowArchivedProjects] = useState(false)
+  const [showAddTask, setShowAddTask] = useState(false)
+  const [showDoneTasks, setShowDoneTasks] = useState(false)
 
   const resident = residents.find(r => r.id === residentId)
   const household = resident ? households.find(h => h.id === resident.householdId) : null
-  const allResidentProjects = projects.filter(p => p.residentId === residentId)
-  const residentProjects = showArchivedProjects
-    ? allResidentProjects
-    : allResidentProjects.filter(p => !p.archived)
-  const archivedCount = allResidentProjects.filter(p => p.archived).length
 
-  // Activity for this resident and their projects/tasks
-  const residentProjectIds = new Set(allResidentProjects.map(p => p.id))
-  const residentTaskIds = new Set(tasks.filter(t => residentProjectIds.has(t.projectId)).map(t => t.id))
-  const residentActivity = activity.filter(a =>
-    a.entityId === residentId ||
-    residentProjectIds.has(a.entityId) ||
-    residentTaskIds.has(a.entityId)
-  ).slice(0, 30)
+  // Tasks for this resident (from TaskContext — no extra DB call needed)
+  const residentTasks = tasks.filter(t => t.residentId === residentId && !t.archived)
+  const openTasks = residentTasks.filter(t => t.status !== 'done')
+  const doneTasks = residentTasks.filter(t => t.status === 'done')
+
+  // Group open tasks by domain_tag
+  const tasksByDomain = {}
+  openTasks.forEach(t => {
+    const key = t.domainTag || 'none'
+    if (!tasksByDomain[key]) tasksByDomain[key] = []
+    tasksByDomain[key].push(t)
+  })
+
+  // Activity for this resident
+  const residentActivity = activity.filter(a => a.entityId === residentId).slice(0, 30)
 
   if (!resident) return <div className="p-8 text-sage-400">Resident not found.</div>
 
@@ -124,14 +141,14 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-sage-100 mb-6">
-        {['overview', 'notes', 'projects', 'activity'].map(t => (
+        {['overview', 'notes', 'tasks', 'activity'].map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px
               ${tab === t ? 'text-sage-800 border-sage-600' : 'text-sage-400 border-transparent hover:text-sage-600'}`}
           >
-            {t === 'projects' ? `Projects (${allResidentProjects.filter(p => !p.archived).length})` : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'tasks' ? `Tasks (${openTasks.length})` : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -193,100 +210,68 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
         <NotesPanel entityType="resident" entityId={residentId} allowSoap={true} />
       )}
 
-      {/* ── Projects tab ── */}
-      {tab === 'projects' && (
-        <div className="bg-white rounded-xl border border-sage-100 shadow-sm p-5">
+      {/* ── Tasks tab ── */}
+      {tab === 'tasks' && (
+        <div>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-semibold text-sage-400 uppercase tracking-widest">Projects</h3>
-            <div className="flex items-center gap-2">
-              {archivedCount > 0 && (
-                <button
-                  onClick={() => setShowArchivedProjects(v => !v)}
-                  className="text-xs text-sage-400 hover:text-sage-600 transition-colors"
-                >
-                  {showArchivedProjects ? 'Hide archived' : `+${archivedCount} archived`}
-                </button>
-              )}
-            </div>
+            <p className="text-sm text-sage-500">{openTasks.length} open task{openTasks.length !== 1 ? 's' : ''}</p>
+            <button
+              onClick={() => setShowAddTask(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-sm"
+            >
+              <Plus size={14} /> Add Task
+            </button>
           </div>
 
-          {residentProjects.length === 0 ? (
-            <p className="text-xs text-sage-300">No projects yet.</p>
+          {openTasks.length === 0 && doneTasks.length === 0 ? (
+            <div className="text-center py-16 text-sage-300">
+              <p className="text-3xl mb-3">✓</p>
+              <p className="text-sm">No tasks for this resident yet.</p>
+            </div>
           ) : (
-            residentProjects.map(project => {
-              const pTasks = tasks.filter(t => t.projectId === project.id)
-              const done = pTasks.filter(t => t.status === 'done').length
-              const pct = pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0
-
-              return (
-                <div key={project.id} className={`mb-6 last:mb-0 ${project.archived ? 'opacity-60' : ''}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      onClick={() => !project.archived && onSelectProject?.(project.id)}
-                      className="text-sm font-semibold text-sage-700 hover:text-sage-900 transition-colors text-left"
-                    >
-                      {project.name}
-                      {project.archived && (
-                        <span className="ml-2 text-xs font-normal text-sage-400">(archived)</span>
-                      )}
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full capitalize
-                        ${project.status === 'active'    ? 'bg-sage-100 text-sage-600' :
-                          project.status === 'completed' ? 'bg-green-50 text-green-600' :
-                                                           'bg-gray-100 text-gray-500'}`}
-                      >
-                        {project.status}
-                      </span>
-                      <div className="relative" onClick={e => e.stopPropagation()}>
-                        <ProjectMenu
-                          project={project}
-                          onArchive={() => archiveProject(project.id)}
-                          onRestore={() => restoreProject(project.id)}
-                          onDelete={() => setConfirmDelete({ id: project.id, name: project.name })}
-                          isAdmin={isAdmin()}
-                        />
-                      </div>
+            <>
+              {/* Tasks grouped by domain */}
+              {Object.entries(tasksByDomain).map(([key, domTasks]) => {
+                const cfg = key !== 'none' ? DOMAIN_CONFIG[key] : null
+                return (
+                  <div key={key} className="mb-5">
+                    {cfg ? (
+                      <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
+                        <span>{cfg.icon}</span>
+                        <span>{cfg.label}</span>
+                        <span className="text-sage-400">({domTasks.length})</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs font-semibold text-sage-400 mb-2">No domain ({domTasks.length})</p>
+                    )}
+                    <div className="space-y-2">
+                      {domTasks.map(t => (
+                        <TaskItem key={t.id} task={t} onToggle={toggleDone} />
+                      ))}
                     </div>
                   </div>
+                )
+              })}
 
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="flex-1 h-1.5 bg-sage-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-sage-500 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-xs text-sage-400 shrink-0">{done}/{pTasks.length}</span>
-                  </div>
-
-                  {pTasks.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {STATUS_COLS.map(col => {
-                        const colTasks = pTasks.filter(t => t.status === col)
-                        return (
-                          <div key={col}>
-                            <p className="text-xs text-sage-400 font-medium mb-1.5">
-                              {STATUS_LABELS[col]} {colTasks.length > 0 && `(${colTasks.length})`}
-                            </p>
-                            <div className="space-y-1.5">
-                              {colTasks.map(t => (
-                                <div key={t.id} className="bg-sage-50 rounded-lg px-2 py-1.5">
-                                  <p className={`text-xs leading-snug ${t.status === 'done' ? 'line-through text-sage-400' : 'text-sage-700'}`}>
-                                    {t.title}
-                                  </p>
-                                </div>
-                              ))}
-                              {colTasks.length === 0 && (
-                                <div className="h-8 border border-dashed border-sage-200 rounded-lg" />
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
+              {/* Completed tasks toggle */}
+              {doneTasks.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => setShowDoneTasks(v => !v)}
+                    className="text-xs text-sage-400 hover:text-sage-600 transition-colors mb-2"
+                  >
+                    {showDoneTasks ? '▾' : '▸'} {doneTasks.length} completed
+                  </button>
+                  {showDoneTasks && (
+                    <div className="space-y-2 opacity-60">
+                      {doneTasks.map(t => (
+                        <TaskItem key={t.id} task={t} onToggle={toggleDone} />
+                      ))}
                     </div>
                   )}
                 </div>
-              )
-            })
+              )}
+            </>
           )}
         </div>
       )}
@@ -327,49 +312,13 @@ export default function ResidentProfile({ residentId, onBack, onSelectProject })
         />
       )}
 
-      {confirmDelete && (
-        <ConfirmModal
-          name={confirmDelete.name}
-          onConfirm={() => { deleteProject(confirmDelete.id); setConfirmDelete(null) }}
-          onCancel={() => setConfirmDelete(null)}
+      {showAddTask && (
+        <QuickTaskModal
+          prefillResident={resident}
+          prefillHousehold={household}
+          onClose={() => setShowAddTask(false)}
         />
       )}
     </div>
-  )
-}
-
-function ProjectMenu({ project, onArchive, onRestore, onDelete, isAdmin }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button
-        onClick={() => setOpen(v => !v)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="p-1 text-sage-300 hover:text-sage-600 rounded transition-colors"
-      >
-        <MoreVertical size={14} />
-      </button>
-      {open && (
-        <div className="absolute right-0 z-20 bg-white border border-sage-200 rounded-xl shadow-lg py-1 min-w-36">
-          {project.archived ? (
-            <button onClick={() => { onRestore(); setOpen(false) }}
-              className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50 flex items-center gap-2">
-              <RotateCcw size={13} /> Restore
-            </button>
-          ) : (
-            <button onClick={() => { onArchive(); setOpen(false) }}
-              className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50 flex items-center gap-2">
-              <Archive size={13} /> Archive
-            </button>
-          )}
-          {isAdmin && (
-            <button onClick={() => { onDelete(); setOpen(false) }}
-              className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">
-              <Trash2 size={13} /> Delete
-            </button>
-          )}
-        </div>
-      )}
-    </>
   )
 }
