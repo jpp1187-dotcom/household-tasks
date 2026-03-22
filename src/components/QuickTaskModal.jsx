@@ -19,6 +19,7 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
     prefillHousehold?.id ?? prefillResident?.householdId ?? ''
   )
   const [domainTag, setDomainTag]             = useState(prefillDomain ?? '')
+  const [domainError, setDomainError]         = useState(false)
   const [listId, setListId]                   = useState('')
   const [assignedTo, setAssignedTo]           = useState(currentUser?.id ?? '')
   const [priority, setPriority]               = useState('medium')
@@ -56,14 +57,15 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
   async function handleSubmit(e) {
     e.preventDefault()
     if (!title.trim()) return
+    if (!domainTag) { setDomainError(true); return }
     setSaving(true)
     try {
       await addTask({
         title:       title.trim(),
         residentId:  selectedResident?.id ?? null,
         householdId: selectedHouseholdId || null,
-        domainTag:   domainTag || null,
-        listId:      listId || null,
+        domainTag,
+        ...(listId ? { listId } : {}),
         assignedTo:  assignedTo || null,
         createdBy:   currentUser?.id,
         priority,
@@ -151,13 +153,20 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
 
           {/* Domain tag */}
           <div>
-            <label className={labelCls}>Domain (optional)</label>
-            <select value={domainTag} onChange={e => setDomainTag(e.target.value)} className={inputCls}>
-              <option value="">— No domain —</option>
+            <label className={labelCls}>Domain *</label>
+            <select
+              value={domainTag}
+              onChange={e => { setDomainTag(e.target.value); setDomainError(false) }}
+              className={`${inputCls} ${domainError ? 'border-red-400 ring-1 ring-red-300' : ''}`}
+            >
+              <option value="">Select a domain…</option>
               {Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => (
                 <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
               ))}
             </select>
+            {domainError && (
+              <p className="text-xs text-red-500 mt-1">Please select a domain.</p>
+            )}
           </div>
 
           {/* List */}
