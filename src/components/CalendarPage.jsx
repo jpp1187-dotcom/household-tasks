@@ -5,7 +5,6 @@ import { format, parse, startOfWeek, getDay } from 'date-fns'
 import { enUS } from 'date-fns/locale'
 import { X, Calendar as CalendarIcon } from 'lucide-react'
 import { useTasks } from '../contexts/TaskContext'
-import { useHouseholds } from '../contexts/HouseholdContext'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css'
 
@@ -13,15 +12,6 @@ const locales = { 'en-US': enUS }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
 const DnDCalendar = withDragAndDrop(Calendar)
 
-// List name → calendar color mapping
-const LIST_COLOR_MAP = {
-  'Housing':           { bg: '#22c55e', text: '#fff' },
-  'Clinical':          { bg: '#3b82f6', text: '#fff' },
-  'Behavioral Health': { bg: '#14b8a6', text: '#fff' },
-  'Justice':           { bg: '#f97316', text: '#fff' },
-  'Care Coordination': { bg: '#6366f1', text: '#fff' },
-  'Benefits':          { bg: '#a855f7', text: '#fff' },
-}
 const DEFAULT_COLOR = { bg: '#94a3b8', text: '#fff' }
 
 function GoogleCalModal({ onClose }) {
@@ -38,19 +28,10 @@ function GoogleCalModal({ onClose }) {
           </button>
         </div>
         <p className="text-sm text-sage-600 mb-4">
-          Google Calendar sync will be available in a future version of GormBase.
+          Google Calendar sync will be available in a future version.
           When enabled, all tasks with due dates will automatically appear in your
           Google Calendar, and changes made in either app will sync in real time.
         </p>
-        <div className="bg-sage-50 border border-sage-200 rounded-xl p-4 text-xs text-sage-500 mb-5">
-          <p className="font-semibold mb-1">What's being built:</p>
-          <ul className="space-y-1 list-disc list-inside">
-            <li>OAuth 2.0 integration with Google Identity Services</li>
-            <li>Bi-directional sync via Google Calendar API v3</li>
-            <li>Per-user calendar selection and permission scoping</li>
-            <li>Webhook-based push notifications for real-time updates</li>
-          </ul>
-        </div>
         <button
           onClick={onClose}
           className="w-full px-4 py-2 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 transition-colors"
@@ -64,22 +45,18 @@ function GoogleCalModal({ onClose }) {
 
 export default function CalendarPage() {
   const { tasks, lists, updateTask } = useTasks()
-  const { residents, households } = useHouseholds()
   const [view, setView] = useState('month')
   const [date, setDate] = useState(new Date())
-  const [residentFilter, setResidentFilter] = useState('')
-  const [householdFilter, setHouseholdFilter] = useState('')
+  const [listFilter, setListFilter] = useState('')
   const [showGoogleModal, setShowGoogleModal] = useState(false)
+
+  const activeLists = lists.filter(l => !l.archived)
 
   // Map tasks with due dates to calendar events
   const events = useMemo(() => {
     return tasks
       .filter(t => t.dueDate && !t.archived)
-      .filter(t => {
-        if (residentFilter  && t.residentId  !== residentFilter)  return false
-        if (householdFilter && t.householdId !== householdFilter) return false
-        return true
-      })
+      .filter(t => !listFilter || t.listId === listFilter)
       .map(t => {
         const d = new Date(t.dueDate + 'T12:00:00')
         const list = lists.find(l => l.id === t.listId)
@@ -89,19 +66,17 @@ export default function CalendarPage() {
           start: d,
           end: d,
           allDay: true,
-          resource: { task: t, listName: list?.name ?? null },
+          resource: { task: t, listColor: list?.color ?? null },
         }
       })
-  }, [tasks, lists, residentFilter, householdFilter])
+  }, [tasks, lists, listFilter])
 
   function eventPropGetter(event) {
-    const colors = event.resource.listName
-      ? (LIST_COLOR_MAP[event.resource.listName] ?? DEFAULT_COLOR)
-      : DEFAULT_COLOR
+    const bg = event.resource.listColor ?? DEFAULT_COLOR.bg
     return {
       style: {
-        backgroundColor: colors.bg,
-        color: colors.text,
+        backgroundColor: bg,
+        color: '#fff',
         border: 'none',
         borderRadius: '6px',
         fontSize: '12px',
@@ -111,19 +86,12 @@ export default function CalendarPage() {
   }
 
   function onEventDrop({ event, start }) {
-    const newDate = format(start, 'yyyy-MM-dd')
-    updateTask(event.id, { dueDate: newDate })
+    updateTask(event.id, { dueDate: format(start, 'yyyy-MM-dd') })
   }
 
   function onEventResize({ event, start }) {
-    const newDate = format(start, 'yyyy-MM-dd')
-    updateTask(event.id, { dueDate: newDate })
+    updateTask(event.id, { dueDate: format(start, 'yyyy-MM-dd') })
   }
-
-  const allResidents = residents.filter(r => !r.archived)
-  const allHouseholds = households.filter(h => !h.archived)
-
-  const selectClass = "border border-sage-200 rounded-lg px-3 py-1.5 text-xs text-sage-700 bg-white focus:outline-none focus:ring-2 focus:ring-sage-300"
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -140,41 +108,40 @@ export default function CalendarPage() {
           </button>
         </div>
 
-        {/* Filters */}
+        {/* List filter */}
         <div className="flex flex-wrap gap-2">
-          <select value={residentFilter} onChange={e => setResidentFilter(e.target.value)} className={selectClass}>
-            <option value="">All Residents</option>
-            {allResidents.map(r => (
-              <option key={r.id} value={r.id}>{r.preferredName || r.legalName}</option>
+          <select
+            value={listFilter}
+            onChange={e => setListFilter(e.target.value)}
+            className="border border-sage-200 rounded-lg px-3 py-1.5 text-xs text-sage-700 bg-white focus:outline-none focus:ring-2 focus:ring-sage-300"
+          >
+            <option value="">All Lists</option>
+            {activeLists.map(l => (
+              <option key={l.id} value={l.id}>{l.icon} {l.name}</option>
             ))}
           </select>
 
-          <select value={householdFilter} onChange={e => setHouseholdFilter(e.target.value)} className={selectClass}>
-            <option value="">All Households</option>
-            {allHouseholds.map(h => (
-              <option key={h.id} value={h.id}>{h.name}</option>
-            ))}
-          </select>
-
-          {(residentFilter || householdFilter) && (
+          {listFilter && (
             <button
-              onClick={() => { setResidentFilter(''); setHouseholdFilter('') }}
+              onClick={() => setListFilter('')}
               className="px-3 py-1.5 text-xs text-sage-400 hover:text-sage-700 border border-sage-200 rounded-lg"
             >
-              Clear filters
+              Clear filter
             </button>
           )}
         </div>
 
         {/* Color legend */}
-        <div className="flex flex-wrap gap-2 mt-3">
-          {Object.entries(LIST_COLOR_MAP).map(([name, val]) => (
-            <span key={name} className="flex items-center gap-1 text-xs text-sage-500">
-              <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: val.bg }} />
-              {name}
-            </span>
-          ))}
-        </div>
+        {activeLists.filter(l => l.color).length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {activeLists.filter(l => l.color).map(l => (
+              <span key={l.id} className="flex items-center gap-1 text-xs text-sage-500">
+                <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: l.color }} />
+                {l.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Calendar */}

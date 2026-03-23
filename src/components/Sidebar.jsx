@@ -1,13 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
-  Home, CheckSquare, Activity, Users,
-  Plus, LogOut, X, Calendar,
-  Star, MessageSquare, Search, ChevronDown, ChevronRight,
+  Home, CheckSquare, Calendar, MessageSquare,
+  LogOut, X, Plus,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { useHouseholds } from '../contexts/HouseholdContext'
-import { getFavorites, removeFavorite, addFavorite } from '../lib/favorites'
 
 function SidebarAvatar({ name }) {
   const initials = (name ?? '?')
@@ -33,34 +30,28 @@ export default function Sidebar({
   unreadCount = 0,
 }) {
   const { currentUser, signOut } = useAuth()
-  const { tasks, lists } = useTasks()
-  const { households, residents } = useHouseholds()
+  const { lists, addList } = useTasks()
 
-  const [favorites, setFavorites] = useState([])
-  const [showPinSearch, setShowPinSearch] = useState(false)
-  const [pinSearch, setPinSearch] = useState('')
+  const [showNewList, setShowNewList] = useState(false)
+  const [newListName, setNewListName] = useState('')
+  const [newListIcon, setNewListIcon] = useState('📋')
+  const [savingList,  setSavingList]  = useState(false)
 
   const activeLists = lists.filter(l => !l.archived)
 
-  useEffect(() => {
-    if (!currentUser?.id) return
-    getFavorites(currentUser.id).then(setFavorites)
-  }, [currentUser?.id])
-
-  async function handleUnpin(entityType, entityId) {
-    await removeFavorite(currentUser.id, entityType, entityId)
-    setFavorites(prev => prev.filter(f => !(f.entity_type === entityType && f.entity_id === entityId)))
-  }
-
-  async function handlePin(entityType, entityId) {
-    await addFavorite(currentUser.id, entityType, entityId)
-    setFavorites(prev => {
-      const exists = prev.some(f => f.entity_type === entityType && f.entity_id === entityId)
-      if (exists) return prev
-      return [...prev, { entity_type: entityType, entity_id: entityId }]
-    })
-    setShowPinSearch(false)
-    setPinSearch('')
+  async function handleCreateList(e) {
+    e?.preventDefault()
+    if (!newListName.trim() || savingList) return
+    setSavingList(true)
+    try {
+      const created = await addList({ name: newListName.trim(), icon: newListIcon })
+      setNewListName('')
+      setNewListIcon('📋')
+      setShowNewList(false)
+      if (created?.id) navigate('list', { listId: created.id })
+    } finally {
+      setSavingList(false)
+    }
   }
 
   function navClass(active) {
@@ -68,41 +59,17 @@ export default function Sidebar({
       ${active ? 'bg-sage-100 text-sage-800' : 'text-sage-600 hover:bg-sage-50'}`
   }
 
-  // Build favorite items for display
-  const favItems = favorites.map(f => {
-    if (f.entity_type === 'resident') {
-      const r = residents.find(x => x.id === f.entity_id)
-      return r ? { ...f, label: r.preferredName || r.legalName, emoji: '👤', householdId: r.householdId } : null
-    }
-    if (f.entity_type === 'household') {
-      const h = households.find(x => x.id === f.entity_id)
-      return h ? { ...f, label: h.name, emoji: '🏠' } : null
-    }
-    return null
-  }).filter(Boolean)
-
-  // Pin search results
-  const pinQuery = pinSearch.toLowerCase().trim()
-  const pinResults = pinQuery ? [
-    ...households.filter(h => !h.archived && h.name.toLowerCase().includes(pinQuery))
-      .map(h => ({ type: 'household', id: h.id, label: h.name, emoji: '🏠' })),
-    ...residents.filter(r => !r.archived && (
-      r.legalName.toLowerCase().includes(pinQuery) ||
-      (r.preferredName && r.preferredName.toLowerCase().includes(pinQuery))
-    )).map(r => ({ type: 'resident', id: r.id, label: r.preferredName || r.legalName, emoji: '👤' })),
-  ].slice(0, 6) : []
-
   return (
     <aside className="w-64 bg-white border-r border-sage-100 flex flex-col h-full shrink-0">
       {/* Logo */}
       <div className="px-6 pt-7 pb-4 flex items-center gap-2.5">
         <img
           src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png"
-          alt="GormBase"
+          alt="Braided"
           className="h-7 w-auto"
         />
         <div className="flex-1">
-          <h1 className="font-display text-xl text-sage-800 leading-tight">GormBase</h1>
+          <h1 className="font-display text-xl text-sage-800 leading-tight">Braided</h1>
           <p className="text-xs text-sage-400 leading-tight">Your household, organized.</p>
         </div>
         {onClose && (
@@ -119,7 +86,7 @@ export default function Sidebar({
 
         <button onClick={() => navigate('home')} className={navClass(activeView === 'home' || activeView === 'dashboard')}>
           <Home size={16} />
-          <span>Home</span>
+          <span>Dashboard</span>
         </button>
 
         <button onClick={() => navigate('my-tasks')} className={navClass(activeView === 'my-tasks')}>
@@ -143,7 +110,16 @@ export default function Sidebar({
         </button>
 
         {/* ── Lists ────────────────────────────── */}
-        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Lists</p>
+        <div className="flex items-center justify-between px-3 mb-1 mt-4">
+          <p className="text-xs font-semibold text-sage-400 uppercase tracking-widest">Lists</p>
+          <button
+            onClick={() => setShowNewList(v => !v)}
+            className="text-sage-400 hover:text-sage-600 transition-colors"
+            title="New list"
+          >
+            <Plus size={13} />
+          </button>
+        </div>
 
         {activeLists.map(list => (
           <button
@@ -159,75 +135,65 @@ export default function Sidebar({
           </button>
         ))}
 
-        {/* ── Favorites ────────────────────────────── */}
-        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">
-          <span className="flex items-center gap-1"><Star size={11} /> Favorites</span>
-        </p>
-
-        {favItems.map(f => (
-          <div key={`${f.entity_type}-${f.entity_id}`} className="flex items-center gap-1 mb-0.5 group">
-            <button
-              onClick={() => {
-                if (f.entity_type === 'resident') {
-                  navigate('resident', { residentId: f.entity_id, householdId: f.householdId })
-                } else {
-                  navigate('household', { householdId: f.entity_id })
-                }
-              }}
-              className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-sage-600 hover:bg-sage-50 transition-colors"
-            >
-              <span>{f.emoji}</span>
-              <span className="flex-1 truncate">{f.label}</span>
-            </button>
-            <button
-              onClick={() => handleUnpin(f.entity_type, f.entity_id)}
-              className="opacity-0 group-hover:opacity-100 p-1 text-sage-300 hover:text-sage-500 transition-all mr-1 shrink-0"
-              title="Unpin"
-            >
-              <X size={11} />
-            </button>
-          </div>
-        ))}
-
-        {showPinSearch ? (
-          <div className="px-1 mb-2">
-            <div className="relative">
-              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sage-400 pointer-events-none" />
+        {/* New list inline form */}
+        {showNewList && (
+          <form onSubmit={handleCreateList} className="px-1 mb-2 mt-1">
+            <div className="flex gap-1.5 items-center mb-1.5">
+              <input
+                value={newListIcon}
+                onChange={e => setNewListIcon(e.target.value)}
+                className="w-10 text-center border border-sage-200 rounded-lg px-1 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sage-300"
+                maxLength={2}
+                placeholder="📋"
+              />
               <input
                 autoFocus
-                value={pinSearch}
-                onChange={e => setPinSearch(e.target.value)}
-                placeholder="Search to pin…"
-                className="w-full pl-7 pr-2 py-1.5 text-xs border border-sage-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-300"
+                value={newListName}
+                onChange={e => setNewListName(e.target.value)}
+                placeholder="List name…"
+                className="flex-1 border border-sage-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sage-300"
               />
             </div>
-            {pinResults.length > 0 && (
-              <div className="mt-1 bg-white border border-sage-200 rounded-lg shadow-sm py-1">
-                {pinResults.map(r => (
-                  <button key={`${r.type}-${r.id}`} onClick={() => handlePin(r.type, r.id)}
-                    className="w-full text-left px-3 py-1.5 text-xs text-sage-700 hover:bg-sage-50 flex items-center gap-2">
-                    <span>{r.emoji}</span>
-                    <span className="truncate">{r.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <button onClick={() => { setShowPinSearch(false); setPinSearch('') }}
-              className="text-xs text-sage-400 hover:text-sage-600 px-2 mt-1">Cancel</button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowPinSearch(true)}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-sage-400 hover:text-sage-600 hover:bg-sage-50 transition-colors mb-1"
-          >
-            <Plus size={11} />
-            <span>Pin a resident or household</span>
-          </button>
+            <div className="flex gap-1.5">
+              <button
+                type="submit"
+                disabled={!newListName.trim() || savingList}
+                className="px-3 py-1 text-xs font-semibold bg-sage-600 text-white rounded-lg hover:bg-sage-700 disabled:opacity-40"
+              >
+                {savingList ? 'Adding…' : 'Add'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowNewList(false); setNewListName(''); setNewListIcon('📋') }}
+                className="text-xs text-sage-400 hover:text-sage-600 px-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         )}
+
+        {/* ── More ────────────────────────────── */}
+        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">More</p>
+
+        <button onClick={() => navigate('puzzles')} className={navClass(activeView === 'puzzles')}>
+          <span className="text-base leading-none w-4 text-center">🧩</span>
+          <span>Puzzles</span>
+        </button>
+
+        <button onClick={() => navigate('shared-notes')} className={navClass(activeView === 'shared-notes')}>
+          <span className="text-base leading-none w-4 text-center">📝</span>
+          <span>Shared Notes</span>
+        </button>
+
+        <button onClick={() => navigate('finances')} className={navClass(activeView === 'finances')}>
+          <span className="text-base leading-none w-4 text-center">💰</span>
+          <span>Finances</span>
+        </button>
 
       </nav>
 
-      {/* ── Bottom: user profile link ────────────── */}
+      {/* ── Bottom: user profile + sign out ────────────── */}
       <div className="px-3 pb-5 pt-3 border-t border-sage-100">
         <div className="flex items-center gap-2">
           <button

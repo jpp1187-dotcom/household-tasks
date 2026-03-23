@@ -2,88 +2,23 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Menu, Plus, Bell } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskProvider, useTasks } from './contexts/TaskContext'
-import { HouseholdProvider, useHouseholds } from './contexts/HouseholdContext'
 import Sidebar from './components/Sidebar'
 import HomePage from './components/HomePage'
 import MyTasks from './components/MyTasks'
-import HouseholdList from './components/HouseholdList'
-import HouseholdDetail from './components/HouseholdDetail'
-import ResidentProfile from './components/ResidentProfile'
-import ResidentListPage from './components/ResidentListPage'
-import ActivityFeed from './components/ActivityFeed'
-import ProfilePage from './components/ProfilePage'
-import UserDirectory from './components/UserDirectory'
 import CalendarPage from './components/CalendarPage'
-import TeamsPage from './components/TeamsPage'
 import MessagesPage from './components/MessagesPage'
+import ProfilePage from './components/ProfilePage'
 import GlobalSearch from './components/GlobalSearch'
 import QuickTaskModal from './components/QuickTaskModal'
+import NewListModal from './components/NewListModal'
 import ListPage from './components/ListPage'
+import SharedNotesPage from './components/SharedNotesPage'
+import FinancesPage from './components/FinancesPage'
+import PuzzlesPage from './components/PuzzlesPage'
 import LoginPage from './components/LoginPage'
 import { supabase } from './lib/supabase'
 
 const GORMY = 'https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png'
-
-// ── All-tasks page ─────────────────────────────────────────────────────────────
-function AllTasksPage() {
-  const { tasks, toggleDone, lists } = useTasks()
-  const open = tasks.filter(t => t.status !== 'done' && !t.archived)
-  const byList = {}
-  open.forEach(t => {
-    const key = t.listId || 'none'
-    if (!byList[key]) byList[key] = []
-    byList[key].push(t)
-  })
-
-  return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="sticky top-0 bg-sage-50 z-10 px-4 md:px-8 pt-6 pb-4 border-b border-sage-100">
-        <h2 className="font-display text-2xl text-sage-800">All Tasks</h2>
-        <p className="text-xs text-sage-400 mt-1">{open.length} open task{open.length !== 1 ? 's' : ''}</p>
-      </div>
-      <div className="px-4 md:px-8 py-5 max-w-2xl">
-        {open.length === 0 ? (
-          <div className="text-center py-16 text-sage-300">
-            <p className="text-4xl mb-3">✓</p>
-            <p className="text-sm">No open tasks.</p>
-          </div>
-        ) : (
-          Object.entries(byList).map(([key, listTasks]) => {
-            const list = key !== 'none' ? lists.find(l => l.id === key) : null
-            return (
-              <div key={key} className="mb-6">
-                <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
-                  {list ? <><span>{list.icon}</span><span>{list.name}</span></> : <span>No list</span>}
-                  <span className="text-sage-400">({listTasks.length})</span>
-                </p>
-                <div className="space-y-2">
-                  {listTasks.map(t => (
-                    <div key={t.id} className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-sage-100 shadow-sm">
-                      <button
-                        onClick={() => toggleDone(t.id)}
-                        className="shrink-0 w-5 h-5 rounded-full border-2 border-sage-300 hover:border-sage-500 flex items-center justify-center transition-colors"
-                      />
-                      <span className="flex-1 text-sm text-sage-800">{t.title}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0
-                        ${t.priority === 'high' ? 'bg-red-50 text-red-600 border-red-200' :
-                          t.priority === 'medium' ? 'bg-clay-50 text-clay-600 border-clay-200' :
-                          'bg-sage-50 text-sage-500 border-sage-200'}`}>
-                        {t.priority}
-                      </span>
-                      {t.dueDate && (
-                        <span className="text-xs text-sage-400 shrink-0">{t.dueDate}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── Bell notification component ───────────────────────────────────────────────
 function BellIcon({ onNavigate }) {
@@ -94,7 +29,6 @@ function BellIcon({ onNavigate }) {
   useEffect(() => {
     if (!currentUser?.id) return
 
-    // Initial count
     supabase
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -103,7 +37,6 @@ function BellIcon({ onNavigate }) {
       .then(({ count }) => setUnread(count ?? 0))
       .catch(() => {})
 
-    // Realtime subscription
     channelRef.current = supabase.channel('bell-messages-rt')
       .on('postgres_changes', {
         event: '*',
@@ -145,24 +78,17 @@ function BellIcon({ onNavigate }) {
 
 // ── Inner app — has access to all contexts ────────────────────────────────────
 function AppMain() {
-  const { households, dbError } = useHouseholds()
   const { lists } = useTasks()
 
-  const [activeView,         setActiveView]         = useState('home')
-  const [activeHouseholdId,  setActiveHouseholdId]  = useState(null)
-  const [activeResidentId,   setActiveResidentId]   = useState(null)
-  const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
-  const [activeListId,       setActiveListId]       = useState(null)
-  const [showQuickTask,      setShowQuickTask]      = useState(false)
-  const [sidebarOpen,        setSidebarOpen]        = useState(false)
+  const [activeView,    setActiveView]    = useState('home')
+  const [activeListId,  setActiveListId]  = useState(null)
+  const [showQuickTask, setShowQuickTask] = useState(false)
+  const [showNewList,   setShowNewList]   = useState(false)
+  const [sidebarOpen,   setSidebarOpen]   = useState(false)
 
   function navigate(view, params = {}) {
     setActiveView(view)
-    if (params.householdId !== undefined) setActiveHouseholdId(params.householdId)
-    if (params.residentId  !== undefined) setActiveResidentId(params.residentId)
-    if (params.listId      !== undefined) setActiveListId(params.listId)
-    if (params.tab         !== undefined) setActiveHouseholdTab(params.tab)
-    else if (view === 'household')        setActiveHouseholdTab('details')
+    if (params.listId !== undefined) setActiveListId(params.listId)
     setSidebarOpen(false)
   }
 
@@ -170,20 +96,16 @@ function AppMain() {
 
   function pageTitle() {
     switch (activeView) {
-      case 'home':           return 'Home'
-      case 'my-tasks':       return 'My Tasks'
-      case 'all-tasks':      return 'All Tasks'
-      case 'calendar':       return 'Calendar'
-      case 'list':           return activeList ? `${activeList.icon} ${activeList.name}` : 'List'
-      case 'household':      return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
-      case 'household-list': return 'Households'
-      case 'resident-list':  return 'Residents'
-      case 'resident':       return 'Resident'
-      case 'activity':       return 'Activity'
-      case 'profile':        return 'Profile'
-      case 'teams':          return 'Teams'
-      case 'messages':       return 'Messages'
-      default:               return 'GormBase'
+      case 'home':         return 'Home'
+      case 'my-tasks':     return 'My Tasks'
+      case 'calendar':     return 'Calendar'
+      case 'messages':     return 'Messages'
+      case 'list':         return activeList ? `${activeList.icon} ${activeList.name}` : 'List'
+      case 'shared-notes': return 'Shared Notes'
+      case 'finances':     return 'Finances'
+      case 'puzzles':      return 'Puzzles'
+      case 'profile':      return 'Profile'
+      default:             return 'Braided'
     }
   }
 
@@ -194,57 +116,29 @@ function AppMain() {
         return <HomePage navigate={navigate} />
       case 'my-tasks':
         return <MyTasks />
-      case 'all-tasks':
-        return <AllTasksPage />
       case 'calendar':
         return <CalendarPage />
+      case 'messages':
+        return <MessagesPage />
       case 'list':
         return activeList
-          ? <ListPage listId={activeListId} listName={activeList.name} listIcon={activeList.icon} key={activeListId} />
+          ? <ListPage listId={activeListId} listName={activeList.name} listIcon={activeList.icon} listColor={activeList.color ?? '#4a7c4a'} key={activeListId} />
           : <HomePage navigate={navigate} />
-      case 'household':
-        return (
-          <HouseholdDetail
-            householdId={activeHouseholdId}
-            initialTab={activeHouseholdTab}
-            onBack={() => navigate('household-list')}
-            onSelectResident={id => navigate('resident', { residentId: id, householdId: activeHouseholdId })}
-          />
-        )
-      case 'household-list':
-        return <HouseholdList onSelectHousehold={id => navigate('household', { householdId: id })} />
-      case 'resident-list':
-        return (
-          <ResidentListPage
-            onSelectResident={(residentId, householdId) => navigate('resident', { residentId, householdId })}
-          />
-        )
-      case 'resident':
-        return (
-          <ResidentProfile
-            residentId={activeResidentId}
-            onBack={() => navigate('household', { householdId: activeHouseholdId, tab: 'residents' })}
-          />
-        )
-      case 'activity':  return <ActivityFeed />
-      case 'profile':   return <ProfilePage />
-      case 'team':      return <UserDirectory />
-      case 'teams':     return <TeamsPage />
-      case 'messages':  return <MessagesPage />
-      default:          return <HomePage navigate={navigate} />
+      case 'shared-notes':
+        return <SharedNotesPage />
+      case 'finances':
+        return <FinancesPage />
+      case 'puzzles':
+        return <PuzzlesPage />
+      case 'profile':
+        return <ProfilePage />
+      default:
+        return <HomePage navigate={navigate} />
     }
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-sage-50">
-      {/* DB error banner */}
-      {dbError && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-clay-50 border-b border-clay-200 px-6 py-2 text-xs text-clay-800 flex items-center gap-2">
-          <span>⚠️</span>
-          <span>{dbError}</span>
-        </div>
-      )}
-
       {/* ── Mobile top navbar ──────────────────────── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-white border-b border-sage-100 flex items-center px-4 gap-3">
         <button
@@ -297,6 +191,13 @@ function AppMain() {
           </div>
           <BellIcon onNavigate={navigate} />
           <button
+            onClick={() => setShowNewList(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-sage-700 border border-sage-200 rounded-xl hover:bg-sage-50 transition-colors shrink-0"
+          >
+            <Plus size={16} />
+            List
+          </button>
+          <button
             onClick={() => setShowQuickTask(true)}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-sm shrink-0"
           >
@@ -309,6 +210,9 @@ function AppMain() {
 
       {showQuickTask && (
         <QuickTaskModal onClose={() => setShowQuickTask(false)} />
+      )}
+      {showNewList && (
+        <NewListModal onClose={() => setShowNewList(false)} navigate={navigate} />
       )}
     </div>
   )
@@ -330,9 +234,7 @@ function AppShell() {
 
   return (
     <TaskProvider>
-      <HouseholdProvider>
-        <AppMain />
-      </HouseholdProvider>
+      <AppMain />
     </TaskProvider>
   )
 }

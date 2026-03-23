@@ -1,56 +1,21 @@
-import React, { useState, useMemo } from 'react'
-import { X, Search } from 'lucide-react'
+import React, { useState } from 'react'
+import { X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { useHouseholds } from '../contexts/HouseholdContext'
 
-export default function QuickTaskModal({ onClose, prefillResident = null, prefillHousehold = null, prefillListId = null }) {
+export default function QuickTaskModal({ onClose, prefillListId = null }) {
   const { currentUser, allUsers } = useAuth()
   const { addTask, lists } = useTasks()
-  const { residents, households } = useHouseholds()
 
   const activeLists = lists.filter(l => !l.archived)
 
-  const [title, setTitle]                       = useState('')
-  const [listId, setListId]                     = useState(prefillListId ?? activeLists[0]?.id ?? '')
-  const [listError, setListError]               = useState(false)
-  const [residentSearch, setResidentSearch]     = useState(
-    prefillResident ? (prefillResident.preferredName || prefillResident.legalName) : ''
-  )
-  const [selectedResident, setSelectedResident] = useState(prefillResident)
-  const [selectedHouseholdId, setSelectedHouseholdId] = useState(
-    prefillHousehold?.id ?? prefillResident?.householdId ?? ''
-  )
-  const [assignedTo, setAssignedTo]             = useState(currentUser?.id ?? '')
-  const [priority, setPriority]                 = useState('medium')
-  const [dueDate, setDueDate]                   = useState('')
-  const [saving, setSaving]                     = useState(false)
-  const [showResidentList, setShowResidentList] = useState(false)
-
-  const activeResidents  = residents.filter(r => !r.archived)
-  const activeHouseholds = households.filter(h => !h.archived)
-
-  const filteredResidents = useMemo(() => {
-    if (!residentSearch.trim()) return activeResidents
-    const q = residentSearch.toLowerCase()
-    return activeResidents.filter(r =>
-      r.legalName.toLowerCase().includes(q) ||
-      (r.preferredName && r.preferredName.toLowerCase().includes(q))
-    )
-  }, [activeResidents, residentSearch])
-
-  function selectResident(r) {
-    setSelectedResident(r)
-    setResidentSearch(r.preferredName || r.legalName)
-    setSelectedHouseholdId(r.householdId ?? '')
-    setShowResidentList(false)
-  }
-
-  function clearResident() {
-    setSelectedResident(null)
-    setResidentSearch('')
-    if (!prefillHousehold) setSelectedHouseholdId('')
-  }
+  const [title,     setTitle]     = useState('')
+  const [listId,    setListId]    = useState(prefillListId ?? activeLists[0]?.id ?? '')
+  const [listError, setListError] = useState(false)
+  const [assignedTo, setAssignedTo] = useState(currentUser?.id ?? '')
+  const [priority,  setPriority]  = useState('medium')
+  const [dueDate,   setDueDate]   = useState('')
+  const [saving,    setSaving]    = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -59,14 +24,12 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
     setSaving(true)
     try {
       await addTask({
-        title:       title.trim(),
+        title:     title.trim(),
         listId,
-        residentId:  selectedResident?.id ?? null,
-        householdId: selectedHouseholdId || null,
-        assignedTo:  assignedTo || null,
-        createdBy:   currentUser?.id,
+        assignedTo: assignedTo || null,
+        createdBy:  currentUser?.id,
         priority,
-        dueDate:     dueDate || null,
+        dueDate:   dueDate || null,
       })
       onClose()
     } finally {
@@ -92,8 +55,13 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
           {/* Title */}
           <div>
             <label className={labelCls}>Task *</label>
-            <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="What needs doing?" className={inputCls} />
+            <input
+              autoFocus
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="What needs doing?"
+              className={inputCls}
+            />
           </div>
 
           {/* List (required) */}
@@ -104,6 +72,7 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
               onChange={e => { setListId(e.target.value); setListError(false) }}
               className={`${inputCls} ${listError ? 'border-red-400 ring-1 ring-red-300' : ''}`}
             >
+              <option value="">— Select a list —</option>
               {activeLists.map(l => (
                 <option key={l.id} value={l.id}>{l.icon} {l.name}</option>
               ))}
@@ -111,64 +80,15 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
             {listError && <p className="text-xs text-red-500 mt-1">Please select a list.</p>}
           </div>
 
-          {/* Resident selector */}
-          <div className="relative">
-            <label className={labelCls}>Resident (optional)</label>
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-sage-400 pointer-events-none" />
-              <input
-                value={residentSearch}
-                onChange={e => {
-                  setResidentSearch(e.target.value)
-                  setShowResidentList(true)
-                  if (!e.target.value) clearResident()
-                }}
-                onFocus={() => setShowResidentList(true)}
-                placeholder="Search resident…"
-                className={`${inputCls} pl-8`}
-                disabled={!!prefillResident}
-              />
-            </div>
-            {showResidentList && !prefillResident && filteredResidents.length > 0 && (
-              <div className="absolute z-10 w-full bg-white border border-sage-200 rounded-xl shadow-lg mt-1 max-h-40 overflow-y-auto py-1">
-                {filteredResidents.slice(0, 8).map(r => (
-                  <button key={r.id} type="button"
-                    onMouseDown={() => selectResident(r)}
-                    className="w-full text-left px-4 py-2 text-sm text-sage-700 hover:bg-sage-50"
-                  >
-                    {r.preferredName || r.legalName}
-                    {r.preferredName && <span className="text-xs text-sage-400 ml-1">({r.legalName})</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Household dropdown */}
-          <div>
-            <label className={labelCls}>Household (optional)</label>
-            <select
-              value={selectedHouseholdId}
-              onChange={e => setSelectedHouseholdId(e.target.value)}
-              className={inputCls}
-              disabled={!!selectedResident}
-            >
-              <option value="">— No household —</option>
-              {activeHouseholds.map(h => (
-                <option key={h.id} value={h.id}>{h.name}</option>
-              ))}
-            </select>
-            {selectedResident && (
-              <p className="text-xs text-sage-400 mt-1">Auto-filled from resident's household.</p>
-            )}
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
             {/* Assigned to */}
             <div>
               <label className={labelCls}>Assign to</label>
               <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} className={inputCls}>
-                {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                <option value="">— Anyone —</option>
+                {(allUsers ?? []).map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
               </select>
             </div>
 
@@ -193,8 +113,11 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-sage-500 hover:text-sage-700">
               Cancel
             </button>
-            <button type="submit" disabled={saving || !title.trim()}
-              className="px-5 py-2 text-sm font-semibold bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-40 transition-colors">
+            <button
+              type="submit"
+              disabled={saving || !title.trim()}
+              className="px-5 py-2 text-sm font-semibold bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-40 transition-colors"
+            >
               {saving ? 'Adding…' : '+ Add Task'}
             </button>
           </div>

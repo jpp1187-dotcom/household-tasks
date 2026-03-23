@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { CheckSquare, AlertCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { useHouseholds } from '../contexts/HouseholdContext'
 import { supabase } from '../lib/supabase'
 
 function greeting() {
@@ -20,209 +19,300 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function ResidentCaseCard({ resident, tasks, onClick }) {
-  const residentTasks = tasks.filter(t => t.residentId === resident.id && !t.archived)
-  const open = residentTasks.filter(t => t.status !== 'done')
-  const overdue = open.filter(t => t.dueDate && t.dueDate < today())
-
-  const words = (resident.legalName ?? '').trim().split(/\s+/)
-  const initials = words.length >= 2
-    ? (words[0][0] ?? '').toUpperCase() + (words[words.length - 1][0] ?? '').toUpperCase()
-    : (words[0]?.[0] ?? '?').toUpperCase()
-
-  const hue = resident.legalName.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-3 w-full bg-white rounded-xl border border-sage-100 shadow-sm px-4 py-3 hover:shadow-md transition-shadow text-left"
-    >
-      <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold text-white shrink-0"
-        style={{ backgroundColor: `hsl(${hue}, 40%, 52%)` }}
-      >
-        {initials}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-sage-800 truncate">
-          {resident.preferredName || resident.legalName}
-        </p>
-        {resident.householdName && (
-          <p className="text-xs text-sage-400 truncate">{resident.householdName}</p>
-        )}
-      </div>
-      <div className="text-right shrink-0">
-        <p className="text-sm font-semibold text-sage-700">{open.length}</p>
-        <p className="text-xs text-sage-400">open</p>
-      </div>
-      {overdue.length > 0 ? (
-        <div className="flex items-center gap-1 shrink-0">
-          <AlertCircle size={13} className="text-red-400" />
-          <span className="text-xs text-red-500 font-medium">{overdue.length} overdue</span>
-        </div>
-      ) : open.length > 0 ? (
-        <span className="text-xs text-sage-400 shrink-0">on track</span>
-      ) : null}
-    </button>
-  )
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins  = Math.floor(diff / 60000)
+  if (mins < 60)  return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days  = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
-function TeamMemberCard({ user }) {
-  const isOnline = user.last_seen
-    ? (Date.now() - new Date(user.last_seen).getTime()) < 5 * 60 * 1000
-    : false
+function formatMoney(n) {
+  if (n == null || isNaN(n)) return '—'
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+}
 
-  const initials = (user.name ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-  const hue = (user.name ?? '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360
-
+// ── Card wrapper — pointer + hover border ──────────────────────────────────────
+function Card({ onClick, className = '', children }) {
   return (
-    <div className="flex items-center gap-3 py-2">
-      <div className="relative shrink-0">
-        {user.avatar_url ? (
-          <img src={user.avatar_url} alt={user.name} className="w-9 h-9 rounded-full object-cover" />
-        ) : (
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold text-white"
-            style={{ backgroundColor: `hsl(${hue}, 45%, 48%)` }}
-          >
-            {initials}
-          </div>
-        )}
-        <span
-          className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${isOnline ? 'bg-green-400' : 'bg-sage-200'}`}
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-sage-800 truncate">{user.name ?? user.email}</p>
-        <p className="text-xs text-sage-400 capitalize">{user.role}</p>
-      </div>
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl border border-sage-100 shadow-sm cursor-pointer hover:border-sage-300 transition-colors ${className}`}
+    >
+      {children}
     </div>
   )
 }
 
 export default function HomePage({ navigate }) {
-  const { currentUser, allUsers } = useAuth()
-  const { tasks } = useTasks()
-  const { residents, households } = useHouseholds()
+  const { currentUser } = useAuth()
+  const { tasks, lists } = useTasks()
 
-  const [teamName, setTeamName] = useState(null)
-  const [teamMembers, setTeamMembers] = useState([])
+  // ── Finance data ────────────────────────────────────────────────────────────
+  const [billsTotal,  setBillsTotal]  = useState(null)
+  const [spendTotal,  setSpendTotal]  = useState(null)
+
+  // ── Recent shared notes ─────────────────────────────────────────────────────
+  const [recentNotes, setRecentNotes] = useState([])
+
+  // ── Open tasks (direct query for fresh due-date sort) ───────────────────────
+  const [openTasks, setOpenTasks] = useState([])
+
+  const activeLists = lists.filter(l => !l.archived)
+
+  // Open task count per list (from context tasks)
+  function openCountForList(listId) {
+    return tasks.filter(t => t.listId === listId && t.status !== 'done' && !t.archived).length
+  }
+  const totalOpen = tasks.filter(t => t.status !== 'done' && !t.archived).length
 
   useEffect(() => {
-    if (!currentUser?.id) return
-    // Fetch team membership
+    // Bills: sum of unpaid amounts
     supabase
-      .from('team_members')
-      .select('team_id, teams(id, name)')
-      .eq('user_id', currentUser.id)
-      .limit(1)
+      .from('bills')
+      .select('amount')
+      .eq('paid', false)
       .then(({ data }) => {
-        if (data?.length > 0) {
-          const team = data[0].teams
-          setTeamName(team?.name ?? null)
-          // Fetch teammates
-          supabase
-            .from('team_members')
-            .select('user_id')
-            .eq('team_id', data[0].team_id)
-            .then(({ data: members }) => {
-              const memberIds = new Set((members ?? []).map(m => m.user_id))
-              setTeamMembers(allUsers.filter(u => memberIds.has(u.id)))
-            })
-        } else {
-          // Fallback: show all users if no team tables
-          setTeamMembers(allUsers)
-        }
+        const sum = (data ?? []).reduce((acc, b) => acc + (b.amount ?? 0), 0)
+        setBillsTotal(sum)
       })
+      .catch(() => {})
+
+    // Expenses: sum this month
+    const thisMonth = new Date().toISOString().slice(0, 7)
+    supabase
+      .from('expenses')
+      .select('amount')
+      .gte('date', `${thisMonth}-01`)
+      .then(({ data }) => {
+        const sum = (data ?? []).reduce((acc, e) => acc + (e.amount ?? 0), 0)
+        setSpendTotal(sum)
+      })
+      .catch(() => {})
+
+    // Recent shared notes — join author name
+    supabase
+      .from('shared_notes')
+      .select('id, title, content, created_at, author:profiles!created_by(name)')
+      .order('created_at', { ascending: false })
+      .limit(3)
+      .then(({ data }) => setRecentNotes(data ?? []))
       .catch(() => {
-        setTeamMembers(allUsers)
+        // Fallback without join
+        supabase
+          .from('shared_notes')
+          .select('id, title, content, created_at, created_by')
+          .order('created_at', { ascending: false })
+          .limit(3)
+          .then(({ data }) => setRecentNotes(data ?? []))
+          .catch(() => {})
       })
-  }, [currentUser?.id, allUsers])
 
-  // My Caseload: residents with tasks I created or am assigned to
-  const myTaskResidentIds = new Set(
-    tasks
-      .filter(t => !t.archived && (t.assignedTo === currentUser?.id || t.createdBy === currentUser?.id) && t.residentId)
-      .map(t => t.residentId)
-  )
-  const caseloadResidents = residents
-    .filter(r => !r.archived && myTaskResidentIds.has(r.id))
-    .map(r => ({
-      ...r,
-      householdName: households.find(h => h.id === r.householdId)?.name ?? '',
-    }))
-    .sort((a, b) => (a.preferredName || a.legalName).localeCompare(b.preferredName || b.legalName))
-
-  const totalOpen = tasks.filter(t => t.status !== 'done' && !t.archived).length
-  const activeResidentCount = residents.filter(r => !r.archived).length
+    // Open tasks — last 5 by due date
+    supabase
+      .from('tasks')
+      .select('id, title, due_date, list_id, status')
+      .eq('archived', false)
+      .neq('status', 'done')
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .limit(5)
+      .then(({ data }) => setOpenTasks(data ?? []))
+      .catch(() => {})
+  }, [])
 
   return (
     <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
+
       {/* Greeting */}
       <div className="mb-6">
         <h2 className="font-display text-2xl text-sage-800">
-          {greeting()}, {currentUser?.name?.split(' ')[0] ?? 'there'} 🐕
+          {greeting()}, {currentUser?.name?.split(' ')[0] ?? 'there'} 👋
         </h2>
         <p className="text-sm text-sage-400 mt-0.5">{formatDate()}</p>
-        {teamName && <p className="text-xs text-sage-400 mt-0.5">{teamName}</p>}
       </div>
 
-      {/* Quick stats */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-white rounded-xl border border-sage-100 shadow-sm p-4">
-          <p className="text-2xl font-bold text-sage-700">{totalOpen}</p>
-          <p className="text-xs text-sage-400 mt-0.5">open tasks</p>
-        </div>
-        <div className="bg-white rounded-xl border border-sage-100 shadow-sm p-4">
-          <p className="text-2xl font-bold text-sage-700">{activeResidentCount}</p>
-          <p className="text-xs text-sage-400 mt-0.5">residents</p>
-        </div>
+      {/* ── Top 3 cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+
+        {/* 📋 Current Lists */}
+        <Card className="flex flex-col">
+          <div className="px-5 pt-5 pb-3 border-b border-sage-50">
+            <p className="text-xs font-semibold text-sage-400 uppercase tracking-wide mb-1">📋 Current Lists</p>
+          </div>
+          <div className="flex-1 divide-y divide-sage-50">
+            {activeLists.length === 0 ? (
+              <p className="px-5 py-4 text-xs text-sage-300 text-center">No lists yet.</p>
+            ) : (
+              activeLists.map(list => {
+                const count = openCountForList(list.id)
+                return (
+                  <button
+                    key={list.id}
+                    onClick={() => navigate('list', { listId: list.id })}
+                    className="w-full flex items-center gap-2 px-5 py-2.5 hover:bg-sage-50 transition-colors text-left"
+                  >
+                    <span className="text-base leading-none shrink-0">{list.icon}</span>
+                    <span className="flex-1 text-sm text-sage-700 truncate">{list.name}</span>
+                    {count > 0 && (
+                      <span className="text-xs font-semibold text-sage-500 shrink-0">{count}</span>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+          <div
+            className="px-5 py-3 border-t border-sage-50 cursor-pointer hover:bg-sage-50 transition-colors"
+            onClick={() => navigate('my-tasks')}
+          >
+            <p className="text-xs text-sage-400">
+              <span className="font-semibold text-sage-600">{totalOpen}</span> open task{totalOpen !== 1 ? 's' : ''} total
+            </p>
+          </div>
+        </Card>
+
+        {/* 🧩 Puzzle of the Day */}
+        <Card onClick={() => navigate('puzzles')} className="flex flex-col items-center justify-center p-6 text-center">
+          <p className="text-xs font-semibold text-sage-400 uppercase tracking-wide mb-4">🧩 Puzzle of the Day</p>
+          <p className="text-5xl mb-4">🧩</p>
+          <p className="text-xs text-sage-400 mb-5">Coming soon</p>
+          <button
+            disabled
+            className="px-5 py-2 text-sm font-semibold text-sage-300 bg-sage-50 border border-sage-200 rounded-xl cursor-not-allowed"
+          >
+            Play
+          </button>
+        </Card>
+
+        {/* 💰 Financial Overview */}
+        <Card onClick={() => navigate('finances')} className="flex flex-col">
+          <div className="px-5 pt-5 pb-3 border-b border-sage-50">
+            <p className="text-xs font-semibold text-sage-400 uppercase tracking-wide">💰 Financial Overview</p>
+          </div>
+          <div className="flex-1 px-5 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-sage-500">Bills due</span>
+              <span className={`text-sm font-semibold ${billsTotal > 0 ? 'text-red-500' : 'text-sage-400'}`}>
+                {billsTotal == null ? '…' : formatMoney(billsTotal)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-sage-500">Shared spend</span>
+              <span className="text-sm font-semibold text-sage-800">
+                {spendTotal == null ? '…' : formatMoney(spendTotal)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-sage-500">Budget left</span>
+              <span className="text-sm font-semibold text-green-600">—</span>
+            </div>
+          </div>
+          <div className="px-5 py-3 border-t border-sage-50">
+            <p className="text-xs text-sage-400">Tap to view details →</p>
+          </div>
+        </Card>
+
       </div>
 
-      {/* Two-column layout */}
-      <div className="flex flex-col lg:flex-row gap-6">
+      {/* ── Bottom 2 cards ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* My Caseload — left */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display text-lg text-sage-800">My Caseload</h3>
-            <span className="text-xs text-sage-400">{caseloadResidents.length} resident{caseloadResidents.length !== 1 ? 's' : ''}</span>
+        {/* 📝 Recent Shared Notes */}
+        <Card className="flex flex-col">
+          <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-sage-50">
+            <p className="text-xs font-semibold text-sage-400 uppercase tracking-wide">📝 Recent Shared Notes</p>
+            <button
+              onClick={e => { e.stopPropagation(); navigate('shared-notes') }}
+              className="text-xs text-sage-400 hover:text-sage-600 transition-colors"
+            >
+              View all →
+            </button>
           </div>
 
-          {caseloadResidents.length === 0 ? (
-            <div className="text-center py-12 text-sage-300 bg-white rounded-xl border border-sage-100">
-              <p className="text-3xl mb-2">📋</p>
-              <p className="text-sm">No residents with active tasks.</p>
+          {recentNotes.length === 0 ? (
+            <div
+              className="flex-1 flex flex-col items-center justify-center py-10 text-sage-300 cursor-pointer hover:bg-sage-50 transition-colors"
+              onClick={() => navigate('shared-notes')}
+            >
+              <p className="text-2xl mb-1">📝</p>
+              <p className="text-xs">No shared notes yet.</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {caseloadResidents.map(r => (
-                <ResidentCaseCard
-                  key={r.id}
-                  resident={r}
-                  tasks={tasks}
-                  onClick={() => navigate('resident', { residentId: r.id, householdId: r.householdId })}
-                />
+            <div className="divide-y divide-sage-50">
+              {recentNotes.map(note => (
+                <button
+                  key={note.id}
+                  onClick={() => navigate('shared-notes')}
+                  className="w-full text-left px-5 py-3 hover:bg-sage-50 transition-colors"
+                >
+                  <p className="text-sm font-medium text-sage-800 truncate">{note.title || 'Untitled note'}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {(note.author?.name || note.created_by) && (
+                      <span className="text-xs text-sage-400 truncate">
+                        {note.author?.name ?? note.created_by?.slice(0, 8)}
+                      </span>
+                    )}
+                    <span className="text-xs text-sage-300">{timeAgo(note.created_at)}</span>
+                  </div>
+                </button>
               ))}
             </div>
           )}
-        </div>
+        </Card>
 
-        {/* My Team — right */}
-        <div className="w-full lg:w-72 shrink-0">
-          <h3 className="font-display text-lg text-sage-800 mb-3">My Team</h3>
-          <div className="bg-white rounded-xl border border-sage-100 shadow-sm px-4 py-3">
-            {teamMembers.length === 0 ? (
-              <p className="text-xs text-sage-300 py-4 text-center">No team members found.</p>
-            ) : (
-              <div className="divide-y divide-sage-50">
-                {teamMembers.map(u => (
-                  <TeamMemberCard key={u.id} user={u} />
-                ))}
-              </div>
-            )}
+        {/* ✓ Open Tasks */}
+        <Card className="flex flex-col">
+          <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-sage-50">
+            <p className="text-xs font-semibold text-sage-400 uppercase tracking-wide flex items-center gap-1.5">
+              <CheckSquare size={12} className="text-sage-400" />
+              Open Tasks
+            </p>
+            <button
+              onClick={e => { e.stopPropagation(); navigate('my-tasks') }}
+              className="text-xs text-sage-400 hover:text-sage-600 transition-colors"
+            >
+              View all →
+            </button>
           </div>
-        </div>
+
+          {openTasks.length === 0 ? (
+            <div
+              className="flex-1 flex flex-col items-center justify-center py-10 text-sage-300 cursor-pointer hover:bg-sage-50 transition-colors"
+              onClick={() => navigate('my-tasks')}
+            >
+              <p className="text-2xl mb-1">✓</p>
+              <p className="text-xs">All caught up!</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-sage-50">
+              {openTasks.map(t => {
+                const isOverdue = t.due_date && t.due_date < today()
+                const list = lists.find(l => l.id === t.list_id)
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => navigate('my-tasks')}
+                    className="w-full text-left px-5 py-3 hover:bg-sage-50 transition-colors flex items-start gap-2"
+                  >
+                    {isOverdue && <AlertCircle size={12} className="text-red-400 mt-0.5 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-sage-800 truncate">{t.title}</p>
+                      {list && <p className="text-xs text-sage-400">{list.icon} {list.name}</p>}
+                    </div>
+                    {t.due_date && (
+                      <span className={`text-xs shrink-0 ${isOverdue ? 'text-red-500 font-medium' : 'text-sage-400'}`}>
+                        {t.due_date}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </Card>
 
       </div>
     </div>

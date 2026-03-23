@@ -140,7 +140,7 @@ export function TaskProvider({ children }) {
   async function addList(list) {
     const { data, error } = await supabase
       .from('lists')
-      .insert({ name: list.name, icon: list.icon ?? '📋', color: list.color ?? 'sage' })
+      .insert({ name: list.name, icon: list.icon ?? '📋', color: list.color ?? '#4a7c4a' })
       .select()
       .single()
     if (error) throw error
@@ -149,10 +149,21 @@ export function TaskProvider({ children }) {
     return newList
   }
 
+  async function updateList(id, changes) {
+    const dbChanges = {}
+    if ('name'  in changes) dbChanges.name  = changes.name
+    if ('icon'  in changes) dbChanges.icon  = changes.icon
+    if ('color' in changes) dbChanges.color = changes.color
+    if ('archived' in changes) dbChanges.archived = changes.archived
+    const { error } = await supabase.from('lists').update(dbChanges).eq('id', id)
+    if (error) throw error
+    setLists(prev => prev.map(l => l.id === id ? { ...l, ...changes } : l))
+  }
+
   return (
     <TaskContext.Provider value={{
       tasks, lists, loading,
-      addTask, updateTask, deleteTask, archiveTask, toggleDone, addList,
+      addTask, updateTask, deleteTask, archiveTask, toggleDone, addList, updateList,
     }}>
       {children}
     </TaskContext.Provider>
