@@ -622,7 +622,7 @@ export default function HomePage({ navigate }) {
   }, [currentUser?.id])
 
   return (
-    <div className="flex-1 overflow-y-auto min-h-0 bg-sage-50">
+    <div className="bg-sage-50 min-h-full">
       <div className="px-4 md:px-8 py-6 md:py-8 max-w-[1400px] mx-auto">
 
         {/* Greeting row + Customize button */}

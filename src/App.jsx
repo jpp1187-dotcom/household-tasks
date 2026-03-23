@@ -142,7 +142,7 @@ function DashboardHeader({ navigate, onNewList, onNewTask, onMenuOpen }) {
         </div>
       </div>
       {/* Mobile search bar */}
-      <div className="md:hidden px-4 py-2 bg-white border-b border-sage-50">
+      <div className="md:hidden shrink-0 px-4 py-2 bg-white border-b border-sage-50">
         <GlobalSearch navigate={navigate} />
       </div>
     </>
@@ -160,9 +160,9 @@ function AppMain() {
   const [sidebarOpen,   setSidebarOpen]   = useState(false)
 
   function navigate(view, params = {}) {
+    setSidebarOpen(false)                                  // close first so slide-out plays
     setActiveView(view)
     if (params.listId !== undefined) setActiveListId(params.listId)
-    setSidebarOpen(false)
   }
 
   const activeList = lists.find(l => l.id === activeListId)
@@ -231,18 +231,18 @@ function AppMain() {
           onMenuOpen={() => setSidebarOpen(true)}
         />
 
-        {/* Mobile sidebar backdrop */}
+        {/* Mobile sidebar backdrop — high z-index, blurred overlay */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
-        {/* Slide-in sidebar for mobile dashboard */}
+        {/* Slide-in sidebar for mobile dashboard — z-50 so it clears modals */}
         <div
           className={`
-            fixed inset-y-0 left-0 z-40
+            fixed inset-y-0 left-0 z-50
             transform transition-transform duration-200 ease-in-out
             md:hidden
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -256,8 +256,8 @@ function AppMain() {
           />
         </div>
 
-        {/* Main content — flex column so HomePage's flex-1 works correctly */}
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+        {/* Main content — this div IS the scroll container; no nested flex needed */}
+        <div className="flex-1 overflow-y-auto min-h-0">
           <HomePage navigate={navigate} />
         </div>
         {modals}
@@ -296,9 +296,9 @@ function AppMain() {
         </button>
       </div>
 
-      {/* ── Mobile sidebar backdrop ── */}
+      {/* ── Mobile sidebar backdrop — blurred overlay ── */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* ── Sidebar ── */}
