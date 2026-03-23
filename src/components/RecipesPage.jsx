@@ -33,7 +33,7 @@ function TagChip({ tag, active, onClick }) {
 
 // ── Recipe card ────────────────────────────────────────────────────────────────
 function RecipeCard({ recipe, onClick }) {
-  const totalTime = (recipe.prep_time ?? 0) + (recipe.cook_time ?? 0)
+  const totalTime = recipe.total_time_mins ?? 0
   return (
     <button
       onClick={onClick}
@@ -70,7 +70,7 @@ function RecipeCard({ recipe, onClick }) {
 
 // ── Recipe detail modal ────────────────────────────────────────────────────────
 function RecipeDetail({ recipe, onClose, onEdit, canEdit }) {
-  const totalTime = (recipe.prep_time ?? 0) + (recipe.cook_time ?? 0)
+  const totalTime = recipe.total_time_mins ?? 0
   const ingredients = Array.isArray(recipe.ingredients)
     ? recipe.ingredients
     : (recipe.ingredients ?? '').split('\n').filter(Boolean)
@@ -108,8 +108,8 @@ function RecipeDetail({ recipe, onClose, onEdit, canEdit }) {
           {recipe.description && <p className="text-sm text-sage-500 mb-4">{recipe.description}</p>}
 
           <div className="flex flex-wrap gap-4 text-xs text-sage-500 mb-4">
-            {recipe.prep_time > 0 && <span><strong>Prep:</strong> {recipe.prep_time} min</span>}
-            {recipe.cook_time > 0 && <span><strong>Cook:</strong> {recipe.cook_time} min</span>}
+            {recipe.prep_time_mins > 0 && <span><strong>Prep:</strong> {recipe.prep_time_mins} min</span>}
+            {recipe.cook_time_mins > 0 && <span><strong>Cook:</strong> {recipe.cook_time_mins} min</span>}
             {totalTime > 0 && <span><strong>Total:</strong> {totalTime} min</span>}
             {recipe.servings && <span><strong>Serves:</strong> {recipe.servings}</span>}
           </div>
@@ -158,19 +158,19 @@ function RecipeForm({ recipe, onClose, onSaved }) {
   const isEdit = !!recipe?.id
 
   const [form, setForm] = useState({
-    title:        recipe?.title        ?? '',
-    description:  recipe?.description  ?? '',
-    prep_time:    recipe?.prep_time    ?? '',
-    cook_time:    recipe?.cook_time    ?? '',
-    servings:     recipe?.servings     ?? '',
-    ingredients:  Array.isArray(recipe?.ingredients)
-                    ? recipe.ingredients.join('\n')
-                    : (recipe?.ingredients ?? ''),
-    instructions: Array.isArray(recipe?.instructions)
-                    ? recipe.instructions.join('\n')
-                    : (recipe?.instructions ?? ''),
-    tags:         recipe?.tags?.join(', ') ?? '',
-    photo_url:    recipe?.photo_url    ?? '',
+    title:         recipe?.title          ?? '',
+    description:   recipe?.description    ?? '',
+    prep_time_mins: recipe?.prep_time_mins ?? '',
+    cook_time_mins: recipe?.cook_time_mins ?? '',
+    servings:      recipe?.servings        ?? '',
+    ingredients:   Array.isArray(recipe?.ingredients)
+                     ? recipe.ingredients.join('\n')
+                     : (recipe?.ingredients ?? ''),
+    instructions:  Array.isArray(recipe?.instructions)
+                     ? recipe.instructions.join('\n')
+                     : (recipe?.instructions ?? ''),
+    tags:          recipe?.tags?.join(', ') ?? '',
+    photo_url:     recipe?.photo_url       ?? '',
   })
   const [saving,    setSaving]    = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -197,16 +197,17 @@ function RecipeForm({ recipe, onClose, onSaved }) {
     e.preventDefault()
     if (!form.title.trim()) return
     setSaving(true)
+    // total_time_mins is a GENERATED ALWAYS column — do NOT include it in the payload
     const payload = {
-      title:        form.title.trim(),
-      description:  form.description.trim(),
-      prep_time:    Number(form.prep_time) || 0,
-      cook_time:    Number(form.cook_time) || 0,
-      servings:     Number(form.servings) || null,
-      ingredients:  form.ingredients.split('\n').map(l => l.trim()).filter(Boolean),
-      instructions: form.instructions.split('\n').map(l => l.trim()).filter(Boolean),
-      tags:         parsedTags,
-      photo_url:    form.photo_url || null,
+      title:          form.title.trim(),
+      description:    form.description.trim(),
+      prep_time_mins: Number(form.prep_time_mins) || 0,
+      cook_time_mins: Number(form.cook_time_mins) || 0,
+      servings:       Number(form.servings) || null,
+      ingredients:    form.ingredients.split('\n').map(l => l.trim()).filter(Boolean),
+      instructions:   form.instructions.split('\n').map(l => l.trim()).filter(Boolean),
+      tags:           parsedTags,
+      photo_url:      form.photo_url || null,
     }
     if (isEdit) {
       const { error } = await supabase.from('recipes').update(payload).eq('id', recipe.id)
@@ -241,11 +242,11 @@ function RecipeForm({ recipe, onClose, onSaved }) {
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="block text-xs font-semibold text-sage-500 mb-1">Prep (min)</label>
-              <input type="number" min="0" value={form.prep_time} onChange={e => set('prep_time', e.target.value)} className={inputCls} />
+              <input type="number" min="0" value={form.prep_time_mins} onChange={e => set('prep_time_mins', e.target.value)} className={inputCls} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-sage-500 mb-1">Cook (min)</label>
-              <input type="number" min="0" value={form.cook_time} onChange={e => set('cook_time', e.target.value)} className={inputCls} />
+              <input type="number" min="0" value={form.cook_time_mins} onChange={e => set('cook_time_mins', e.target.value)} className={inputCls} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-sage-500 mb-1">Servings</label>

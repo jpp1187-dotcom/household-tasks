@@ -82,18 +82,19 @@ export default function RecipeSearchModal({ onClose, onImported }) {
     try {
       const title = cleanTitle(result.title)
       const tags  = inferTags(result.title, result.snippet)
+      // total_time_mins is a GENERATED ALWAYS column — omit it from the insert
       const { error: dbErr } = await supabase.from('recipes').insert({
         title,
-        description: result.snippet ?? '',
+        description:    result.snippet ?? '',
         tags,
-        source_url:   result.link,
-        created_by:   currentUser?.id,
-        prep_time:    0,
-        cook_time:    0,
-        servings:     null,
-        ingredients:  [],
-        instructions: [],
-        photo_url:    result.imageUrl ?? null,
+        source_url:     result.link,
+        created_by:     currentUser?.id,
+        prep_time_mins: 0,
+        cook_time_mins: 0,
+        servings:       null,
+        ingredients:    [],
+        instructions:   [],
+        photo_url:      result.imageUrl ?? null,
       })
       if (dbErr) throw dbErr
       setSaved(prev => new Set([...prev, result.link]))
