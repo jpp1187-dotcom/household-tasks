@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { useTasks } from '../contexts/TaskContext'
+import { useAuth } from '../contexts/AuthContext'
 
 const TEMPLATES = [
   { name: 'Upcoming Trip',        icon: '✈️' },
@@ -19,6 +20,7 @@ const COLORS = [
 
 export default function NewListModal({ onClose, navigate }) {
   const { addList } = useTasks()
+  const { currentUser } = useAuth()
 
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [name,   setName]   = useState('')
@@ -36,7 +38,8 @@ export default function NewListModal({ onClose, navigate }) {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      const created = await addList({ name: name.trim(), icon, color })
+      const created = await addList({ name: name.trim(), icon, color, createdBy: currentUser?.id })
+      if (!created) { console.error('NewListModal: addList returned null'); return }
       onClose()
       if (created?.id) navigate('list', { listId: created.id })
     } finally {

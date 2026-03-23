@@ -2,6 +2,18 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
+const TIMEZONES = [
+  'America/New_York', 'America/Chicago', 'America/Denver',
+  'America/Los_Angeles', 'America/Toronto', 'America/Vancouver',
+  'America/Phoenix', 'America/Anchorage', 'Pacific/Honolulu',
+  'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+  'Europe/Rome', 'Europe/Madrid', 'Europe/Amsterdam',
+  'Asia/Tokyo', 'Asia/Dubai', 'Asia/Singapore',
+  'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Seoul',
+  'Australia/Sydney', 'Australia/Melbourne', 'Australia/Perth',
+  'Pacific/Auckland', 'UTC',
+]
+
 function InitialsAvatar({ name, size = 'lg' }) {
   const initials = (name ?? '?')
     .split(' ')
@@ -24,22 +36,26 @@ function InitialsAvatar({ name, size = 'lg' }) {
 export default function ProfilePage() {
   const { currentUser, refreshProfile } = useAuth()
   const [form, setForm] = useState({
-    name:   currentUser?.name   ?? '',
-    bio:    currentUser?.bio    ?? '',
-    gender: currentUser?.gender ?? '',
+    name:     currentUser?.name     ?? '',
+    bio:      currentUser?.bio      ?? '',
+    gender:   currentUser?.gender   ?? '',
+    timezone: currentUser?.timezone ?? 'America/New_York',
+    city:     currentUser?.city     ?? '',
   })
   const [newPassword, setNewPassword] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState(null) // { text, ok }
+  const [saving,    setSaving]    = useState(false)
+  const [message,   setMessage]   = useState(null) // { text, ok }
 
-  // Re-sync form fields whenever currentUser updates (e.g. after refreshProfile)
+  // Re-sync form fields whenever currentUser updates
   useEffect(() => {
     if (currentUser) {
       setForm({
-        name:   currentUser.name   ?? '',
-        bio:    currentUser.bio    ?? '',
-        gender: currentUser.gender ?? '',
+        name:     currentUser.name     ?? '',
+        bio:      currentUser.bio      ?? '',
+        gender:   currentUser.gender   ?? '',
+        timezone: currentUser.timezone ?? 'America/New_York',
+        city:     currentUser.city     ?? '',
       })
     }
   }, [currentUser])
@@ -58,7 +74,13 @@ export default function ProfilePage() {
     setSaving(true)
     const { error } = await supabase
       .from('profiles')
-      .update({ name: form.name, bio: form.bio, gender: form.gender })
+      .update({
+        name:     form.name,
+        bio:      form.bio,
+        gender:   form.gender,
+        timezone: form.timezone,
+        city:     form.city,
+      })
       .eq('id', currentUser.id)
     setSaving(false)
     if (error) flash('Error: ' + error.message, false)
@@ -89,7 +111,6 @@ export default function ProfilePage() {
       setUploading(false)
       return
     }
-    // Get public URL and append a cache-busting timestamp to defeat CDN caching
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
     const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`
     const { error: updateErr } = await supabase
@@ -104,6 +125,8 @@ export default function ProfilePage() {
     }
     setUploading(false)
   }
+
+  const inputCls = "w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 focus:outline-none focus:ring-2 focus:ring-sage-300"
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-8 max-w-xl">
@@ -123,13 +146,7 @@ export default function ProfilePage() {
         <div>
           <label className="cursor-pointer px-4 py-2 text-sm font-medium bg-sage-100 hover:bg-sage-200 text-sage-700 rounded-lg transition-colors">
             {uploading ? 'Uploading…' : 'Change photo'}
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarUpload}
-              className="hidden"
-              disabled={uploading}
-            />
+            <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploading} />
           </label>
           <p className="text-xs text-sage-400 mt-1.5">Stored in Supabase Storage "avatars" bucket</p>
         </div>
@@ -138,33 +155,44 @@ export default function ProfilePage() {
       {/* Role badges */}
       <div className="flex flex-wrap gap-2 mb-8">
         {currentUser?.roles?.map(r => (
-          <span
-            key={r}
-            className="px-3 py-1 bg-sage-100 text-sage-700 text-xs font-semibold rounded-full capitalize"
-          >
-            {r}
-          </span>
+          <span key={r} className="px-3 py-1 bg-sage-100 text-sage-700 text-xs font-semibold rounded-full capitalize">{r}</span>
         ))}
       </div>
 
       {/* Profile form */}
       <form onSubmit={handleSave} className="space-y-4 mb-8">
+
         <div>
           <label className="block text-xs font-semibold text-sage-500 mb-1">Display name</label>
-          <input
-            value={form.name}
-            onChange={e => set('name', e.target.value)}
-            className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 focus:outline-none focus:ring-2 focus:ring-sage-300"
-          />
+          <input value={form.name} onChange={e => set('name', e.target.value)} className={inputCls} />
         </div>
+
         <div>
           <label className="block text-xs font-semibold text-sage-500 mb-1">Email</label>
-          <input
-            value={currentUser?.email ?? ''}
-            disabled
-            className="w-full border border-sage-100 rounded-lg px-3 py-2 text-sm text-sage-400 bg-sage-50"
-          />
+          <input value={currentUser?.email ?? ''} disabled className="w-full border border-sage-100 rounded-lg px-3 py-2 text-sm text-sage-400 bg-sage-50" />
         </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-sage-500 mb-1">City</label>
+          <input
+            value={form.city}
+            onChange={e => set('city', e.target.value)}
+            placeholder="e.g. New York"
+            className={inputCls}
+          />
+          <p className="text-xs text-sage-400 mt-0.5">Used as clock label and weather fallback</p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-sage-500 mb-1">Timezone</label>
+          <select value={form.timezone} onChange={e => set('timezone', e.target.value)} className={inputCls}>
+            {TIMEZONES.map(tz => (
+              <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+          <p className="text-xs text-sage-400 mt-0.5">Used for the live clock on your dashboard</p>
+        </div>
+
         <div>
           <label className="block text-xs font-semibold text-sage-500 mb-1">Bio</label>
           <textarea
@@ -174,14 +202,12 @@ export default function ProfilePage() {
             className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 resize-none focus:outline-none focus:ring-2 focus:ring-sage-300"
           />
         </div>
+
         <div>
           <label className="block text-xs font-semibold text-sage-500 mb-1">Gender</label>
-          <input
-            value={form.gender}
-            onChange={e => set('gender', e.target.value)}
-            className="w-full border border-sage-200 rounded-lg px-3 py-2 text-sm text-sage-800 focus:outline-none focus:ring-2 focus:ring-sage-300"
-          />
+          <input value={form.gender} onChange={e => set('gender', e.target.value)} className={inputCls} />
         </div>
+
         <button
           type="submit"
           disabled={saving}

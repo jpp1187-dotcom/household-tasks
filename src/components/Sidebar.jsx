@@ -65,11 +65,11 @@ export default function Sidebar({
       <div className="px-6 pt-7 pb-4 flex items-center gap-2.5">
         <img
           src="https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png"
-          alt="Braided"
+          alt="GormBase"
           className="h-7 w-auto"
         />
         <div className="flex-1">
-          <h1 className="font-display text-xl text-sage-800 leading-tight">Braided</h1>
+          <h1 className="font-display text-xl text-sage-800 leading-tight">GormBase</h1>
           <p className="text-xs text-sage-400 leading-tight">Your household, organized.</p>
         </div>
         {onClose && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Menu, Plus, Bell } from 'lucide-react'
+import { Menu, Plus, Bell, Home } from 'lucide-react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskProvider, useTasks } from './contexts/TaskContext'
 import Sidebar from './components/Sidebar'
@@ -39,9 +39,7 @@ function BellIcon({ onNavigate }) {
 
     channelRef.current = supabase.channel('bell-messages-rt')
       .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'messages',
+        event: '*', schema: 'public', table: 'messages',
         filter: `recipient_id=eq.${currentUser.id}`,
       }, () => {
         supabase
@@ -76,12 +74,77 @@ function BellIcon({ onNavigate }) {
   )
 }
 
-// ── Inner app — has access to all contexts ────────────────────────────────────
+// ── User avatar button ────────────────────────────────────────────────────────
+function UserAvatarBtn({ onNavigate }) {
+  const { currentUser } = useAuth()
+  const name = currentUser?.name ?? currentUser?.email ?? '?'
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const hue = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+
+  return (
+    <button
+      onClick={() => onNavigate('profile')}
+      title="Profile"
+      className="shrink-0 w-8 h-8 rounded-full overflow-hidden border-2 border-sage-100 hover:border-sage-300 transition-colors"
+    >
+      {currentUser?.avatar_url ? (
+        <img src={currentUser.avatar_url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div
+          className="w-full h-full flex items-center justify-center text-xs font-semibold text-white"
+          style={{ backgroundColor: `hsl(${hue}, 45%, 48%)`, fontSize: 11 }}
+        >
+          {initials}
+        </div>
+      )}
+    </button>
+  )
+}
+
+// ── Dashboard header (full-screen mode, no sidebar) ───────────────────────────
+function DashboardHeader({ navigate, onNewList, onNewTask }) {
+  return (
+    <>
+      {/* Main bar */}
+      <div className="shrink-0 bg-white border-b border-sage-100 h-14 flex items-center gap-3 px-4 md:px-6">
+        <img src={GORMY} alt="GormBase" className="h-7 w-auto shrink-0" />
+        <span className="font-display text-lg text-sage-800 shrink-0 hidden sm:block">GormBase</span>
+        <div className="flex-1 hidden md:flex justify-center">
+          <div className="w-full max-w-md">
+            <GlobalSearch navigate={navigate} />
+          </div>
+        </div>
+        <div className="flex items-center gap-1 ml-auto">
+          <button
+            onClick={onNewList}
+            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sage-700 border border-sage-200 rounded-lg hover:bg-sage-50 transition-colors shrink-0"
+          >
+            <Plus size={13} /> List
+          </button>
+          <button
+            onClick={onNewTask}
+            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors shrink-0"
+          >
+            <Plus size={13} /> Task
+          </button>
+          <BellIcon onNavigate={navigate} />
+          <UserAvatarBtn onNavigate={navigate} />
+        </div>
+      </div>
+      {/* Mobile search bar */}
+      <div className="md:hidden px-4 py-2 bg-white border-b border-sage-50">
+        <GlobalSearch navigate={navigate} />
+      </div>
+    </>
+  )
+}
+
+// ── Inner app ─────────────────────────────────────────────────────────────────
 function AppMain() {
   const { lists } = useTasks()
 
-  const [activeView,    setActiveView]    = useState('home')
-  const [activeListId,  setActiveListId]  = useState(null)
+  const [activeView,   setActiveView]   = useState('home')
+  const [activeListId, setActiveListId] = useState(null)
   const [showQuickTask, setShowQuickTask] = useState(false)
   const [showNewList,   setShowNewList]   = useState(false)
   const [sidebarOpen,   setSidebarOpen]   = useState(false)
@@ -93,10 +156,10 @@ function AppMain() {
   }
 
   const activeList = lists.find(l => l.id === activeListId)
+  const isDashboard = activeView === 'home' || activeView === 'dashboard'
 
   function pageTitle() {
     switch (activeView) {
-      case 'home':         return 'Home'
       case 'my-tasks':     return 'My Tasks'
       case 'calendar':     return 'Calendar'
       case 'messages':     return 'Messages'
@@ -105,7 +168,7 @@ function AppMain() {
       case 'finances':     return 'Finances'
       case 'puzzles':      return 'Puzzles'
       case 'profile':      return 'Profile'
-      default:             return 'Braided'
+      default:             return 'GormBase'
     }
   }
 
@@ -137,9 +200,35 @@ function AppMain() {
     }
   }
 
+  const modals = (
+    <>
+      {showQuickTask && <QuickTaskModal onClose={() => setShowQuickTask(false)} />}
+      {showNewList   && <NewListModal   onClose={() => setShowNewList(false)} navigate={navigate} />}
+    </>
+  )
+
+  // ── Dashboard: full-screen, no sidebar ──────────────────────────────────────
+  if (isDashboard) {
+    return (
+      <div className="flex flex-col h-screen overflow-hidden bg-sage-50">
+        <DashboardHeader
+          navigate={navigate}
+          onNewList={() => setShowNewList(true)}
+          onNewTask={() => setShowQuickTask(true)}
+        />
+        <div className="flex-1 overflow-hidden">
+          <HomePage navigate={navigate} />
+        </div>
+        {modals}
+      </div>
+    )
+  }
+
+  // ── App layout: sidebar + top bar + content ──────────────────────────────────
   return (
     <div className="flex h-screen overflow-hidden bg-sage-50">
-      {/* ── Mobile top navbar ──────────────────────── */}
+
+      {/* ── Mobile top navbar ── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-white border-b border-sage-100 flex items-center px-4 gap-3">
         <button
           onClick={() => setSidebarOpen(true)}
@@ -148,7 +237,13 @@ function AppMain() {
         >
           <Menu size={22} />
         </button>
-        <img src={GORMY} alt="" className="h-6 w-auto" />
+        <button
+          onClick={() => navigate('home')}
+          className="text-sage-400 hover:text-sage-700 transition-colors shrink-0"
+          title="Dashboard"
+        >
+          <Home size={16} />
+        </button>
         <span className="font-display text-base text-sage-800 flex-1 truncate">{pageTitle()}</span>
         <BellIcon onNavigate={navigate} />
         <button
@@ -160,12 +255,12 @@ function AppMain() {
         </button>
       </div>
 
-      {/* ── Mobile sidebar backdrop ─────────────────── */}
+      {/* ── Mobile sidebar backdrop ── */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ── Sidebar ─────────────────────────────────── */}
+      {/* ── Sidebar ── */}
       <div
         className={`
           fixed inset-y-0 left-0 z-40
@@ -182,13 +277,18 @@ function AppMain() {
         />
       </div>
 
-      {/* ── Main content ────────────────────────────── */}
+      {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden pt-14 md:pt-0">
         {/* Desktop top bar */}
         <div className="hidden md:flex items-center gap-3 px-6 h-14 border-b border-sage-100 bg-white shrink-0">
-          <div className="flex-1">
-            <GlobalSearch navigate={navigate} />
-          </div>
+          <button
+            onClick={() => navigate('home')}
+            className="text-sage-400 hover:text-sage-700 transition-colors shrink-0"
+            title="Dashboard"
+          >
+            <Home size={18} />
+          </button>
+          <span className="text-sm font-medium text-sage-800 flex-1 truncate">{pageTitle()}</span>
           <BellIcon onNavigate={navigate} />
           <button
             onClick={() => setShowNewList(true)}
@@ -208,12 +308,7 @@ function AppMain() {
         {renderMain()}
       </div>
 
-      {showQuickTask && (
-        <QuickTaskModal onClose={() => setShowQuickTask(false)} />
-      )}
-      {showNewList && (
-        <NewListModal onClose={() => setShowNewList(false)} navigate={navigate} />
-      )}
+      {modals}
     </div>
   )
 }

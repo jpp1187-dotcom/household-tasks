@@ -30,19 +30,9 @@ function isDueThisWeek(dueDate) {
   return dueDate >= t && dueDate <= addDays(t, 7)
 }
 
-function getTaskContext(task) {
-  const listLabel = task.list ? `${task.list.icon} ${task.list.name}` : null
-  if (task.resident?.legal_name) {
-    const name = task.resident.preferred_name || task.resident.legal_name
-    return listLabel ? `${name} · ${listLabel}` : name
-  }
-  if (task.household?.name) {
-    return listLabel ? `${task.household.name} · ${listLabel}` : task.household.name
-  }
-  return listLabel ?? 'No list'
-}
-
 function TaskRow({ task, overdue, onToggle }) {
+  const listLabel = task.list ? `${task.list.icon ?? ''} ${task.list.name}` : 'No list'
+
   return (
     <div className={`flex items-center gap-3 px-4 py-3 bg-white rounded-xl border shadow-sm transition-all
       ${overdue ? 'border-l-4 border-l-red-400 border-r-sage-100 border-t-sage-100 border-b-sage-100' : 'border-sage-100'}`}
@@ -63,13 +53,13 @@ function TaskRow({ task, overdue, onToggle }) {
         {task.title}
       </span>
 
-      {/* Context badge */}
+      {/* List badge */}
       <span className="hidden sm:block text-xs px-2 py-0.5 bg-sage-50 text-sage-500 rounded-full truncate max-w-36">
-        {getTaskContext(task)}
+        {listLabel}
       </span>
 
       {/* Priority */}
-      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0 ${PRIORITY_STYLES[task.priority]}`}>
+      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0 ${PRIORITY_STYLES[task.priority] ?? PRIORITY_STYLES.medium}`}>
         {task.priority}
       </span>
 
@@ -106,10 +96,10 @@ export default function MyTasks() {
   const { currentUser } = useAuth()
   const { updateTask } = useTasks()
 
-  const [tasks, setTasks] = useState([])
-  const [doneTasks, setDoneTasks] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showDone, setShowDone] = useState(false)
+  const [tasks,       setTasks]       = useState([])
+  const [doneTasks,   setDoneTasks]   = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [showDone,    setShowDone]    = useState(false)
   const [loadingDone, setLoadingDone] = useState(false)
 
   const fetchMyTasks = useCallback(async () => {
@@ -118,13 +108,8 @@ export default function MyTasks() {
 
     const { data, error } = await supabase
       .from('tasks')
-      .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived,
-        resident:residents(legal_name, preferred_name),
-        household:households(name),
-        list:lists(name, icon)
-      `)
-      .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
+      .select('id, title, status, priority, due_date, assigned_to, created_by, archived, list:lists(name, icon, color)')
+      .eq('assigned_to', currentUser.id)
       .eq('archived', false)
       .neq('status', 'done')
       .order('due_date', { ascending: true, nullsFirst: false })
@@ -137,22 +122,15 @@ export default function MyTasks() {
     setLoading(false)
   }, [currentUser?.id])
 
-  useEffect(() => {
-    fetchMyTasks()
-  }, [fetchMyTasks])
+  useEffect(() => { fetchMyTasks() }, [fetchMyTasks])
 
   async function loadDoneTasks() {
     if (!currentUser?.id) return
     setLoadingDone(true)
     const { data } = await supabase
       .from('tasks')
-      .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived,
-        resident:residents(legal_name, preferred_name),
-        household:households(name),
-        list:lists(name, icon)
-      `)
-      .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
+      .select('id, title, status, priority, due_date, assigned_to, created_by, archived, list:lists(name, icon, color)')
+      .eq('assigned_to', currentUser.id)
       .eq('archived', false)
       .eq('status', 'done')
       .order('due_date', { ascending: false, nullsFirst: true })
@@ -171,7 +149,6 @@ export default function MyTasks() {
   const thisWeek  = tasks.filter(t => isDueThisWeek(t.due_date))
   const upcoming  = tasks.filter(t => t.due_date && !isOverdue(t.due_date) && !isDueThisWeek(t.due_date))
   const noDueDate = tasks.filter(t => !t.due_date)
-
   const openCount = tasks.length
 
   return (
@@ -181,7 +158,7 @@ export default function MyTasks() {
         <div className="flex items-start justify-between mb-1">
           <div>
             <h2 className="font-display text-2xl text-sage-800">My Tasks</h2>
-            <p className="text-xs text-sage-400 mt-1">{openCount} open task{openCount !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-sage-400 mt-1">{openCount} open task{openCount !== 1 ? 's' : ''} assigned to you</p>
           </div>
           <div className="text-right">
             <p className="text-2xl font-bold text-sage-700">{openCount}</p>

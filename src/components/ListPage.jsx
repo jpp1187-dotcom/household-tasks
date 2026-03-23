@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, Calendar, Plus, Image, Edit2, X as XIcon } from 'lucide-react'
+import { Check, Calendar, Plus, Image, Edit2, X as XIcon, User } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
@@ -8,15 +8,31 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function UserBubble({ userId, allUsers, size = 5 }) {
+  const user = allUsers?.find(u => u.id === userId)
+  if (!user) return null
+  const initials = (user.name ?? '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
+  const hue = (user.name ?? '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360
+  return (
+    <span
+      title={user.name}
+      className={`shrink-0 w-${size} h-${size} rounded-full text-white font-semibold flex items-center justify-center`}
+      style={{ backgroundColor: `hsl(${hue}, 45%, 48%)`, fontSize: size === 5 ? 9 : 11 }}
+    >
+      {initials[0]}
+    </span>
+  )
+}
+
 export default function ListPage({ listId, listName, listIcon, listColor = '#4a7c4a' }) {
-  const { currentUser } = useAuth()
+  const { currentUser, allUsers } = useAuth()
   const { updateTask, updateList } = useTasks()
 
   // ── Inline name editing ────────────────────────────────────────────────────
-  const [localName,    setLocalName]    = useState(listName)
-  const [editingName,  setEditingName]  = useState(false)
-  const [nameDraft,    setNameDraft]    = useState(listName)
-  const [savingName,   setSavingName]   = useState(false)
+  const [localName,  setLocalName]  = useState(listName)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft,  setNameDraft]  = useState(listName)
+  const [savingName, setSavingName] = useState(false)
   const nameInputRef = useRef(null)
 
   async function handleSaveName() {
@@ -36,9 +52,9 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
   }
 
   // ── Description ────────────────────────────────────────────────────────────
-  const [description,  setDescription]  = useState('')
-  const [descDraft,    setDescDraft]    = useState('')
-  const [descLoaded,   setDescLoaded]   = useState(false)
+  const [description, setDescription] = useState('')
+  const [descDraft,   setDescDraft]   = useState('')
+  const [descLoaded,  setDescLoaded]  = useState(false)
 
   useEffect(() => {
     supabase
@@ -62,8 +78,8 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
   }
 
   // ── Photos ─────────────────────────────────────────────────────────────────
-  const [photos,         setPhotos]         = useState([])
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photos,          setPhotos]          = useState([])
+  const [uploadingPhoto,  setUploadingPhoto]  = useState(false)
   const [deletingPhotoId, setDeletingPhotoId] = useState(null)
   const fileInputRef = useRef(null)
 
@@ -82,21 +98,25 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
     if (!file) return
     setUploadingPhoto(true)
     try {
-      const ext  = file.name.split('.').pop()
-      const path = `${listId}/${Date.now()}.${ext}`
-      const { error: uploadErr } = await supabase.storage
+      const filePath = `${listId}/${Date.now()}-${file.name}`
+      const { error: uploadError } = await supabase.storage
         .from('list-photos')
-        .upload(path, file, { upsert: false })
-      if (uploadErr) throw uploadErr
-      const { data: { publicUrl } } = supabase.storage.from('list-photos').getPublicUrl(path)
-      const { data: photoRow } = await supabase
+        .upload(filePath, file, { upsert: true })
+      if (uploadError) { console.error('[ListPage] photo upload:', uploadError); return }
+      const { data: { publicUrl } } = supabase.storage.from('list-photos').getPublicUrl(filePath)
+      await supabase.from('list_photos').insert({
+        list_id:    listId,
+        url:        publicUrl,
+        path:       filePath,
+        created_by: currentUser?.id,
+      })
+      // Refetch to get the new row with its id
+      const { data } = await supabase
         .from('list_photos')
-        .insert({ list_id: listId, url: publicUrl, path, created_by: currentUser?.id })
-        .select()
-        .single()
-      if (photoRow) setPhotos(prev => [photoRow, ...prev])
-    } catch (err) {
-      alert('Upload failed: ' + err.message)
+        .select('*')
+        .eq('list_id', listId)
+        .order('created_at', { ascending: false })
+      setPhotos(data ?? [])
     } finally {
       setUploadingPhoto(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -106,9 +126,7 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
   async function handlePhotoDelete(photo) {
     setDeletingPhotoId(photo.id)
     try {
-      if (photo.path) {
-        await supabase.storage.from('list-photos').remove([photo.path])
-      }
+      if (photo.path) await supabase.storage.from('list-photos').remove([photo.path])
       await supabase.from('list_photos').delete().eq('id', photo.id)
       setPhotos(prev => prev.filter(p => p.id !== photo.id))
     } finally {
@@ -116,18 +134,79 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
     }
   }
 
+  // ── Items ──────────────────────────────────────────────────────────────────
+  const [items,        setItems]        = useState([])
+  const [loadingItems, setLoadingItems] = useState(true)
+  const [newItemTitle, setNewItemTitle] = useState('')
+  const [addingItem,   setAddingItem]   = useState(false)
+
+  const fetchItems = useCallback(async () => {
+    setLoadingItems(true)
+    const { data } = await supabase
+      .from('items')
+      .select('id, title, done, sort_order, created_by, created_at')
+      .eq('list_id', listId)
+      .order('sort_order', { ascending: true })
+    setItems(data ?? [])
+    setLoadingItems(false)
+  }, [listId])
+
+  useEffect(() => { fetchItems() }, [fetchItems])
+
+  const openItems = items.filter(i => !i.done)
+  const doneItems = items.filter(i => i.done)
+
+  async function handleToggleItem(itemId, currentDone) {
+    const newDone = !currentDone
+    await supabase.from('items').update({ done: newDone }).eq('id', itemId)
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, done: newDone } : i))
+  }
+
+  async function handleDeleteItem(itemId) {
+    await supabase.from('items').delete().eq('id', itemId)
+    setItems(prev => prev.filter(i => i.id !== itemId))
+  }
+
+  async function handleAddItem(e) {
+    e?.preventDefault()
+    const title = newItemTitle.trim()
+    if (!title || addingItem) return
+    setAddingItem(true)
+    try {
+      const { data } = await supabase
+        .from('items')
+        .insert({
+          list_id:    listId,
+          title,
+          done:       false,
+          created_by: currentUser?.id,
+          sort_order: items.length,
+        })
+        .select()
+        .single()
+      if (data) {
+        setItems(prev => [...prev, data])
+        setNewItemTitle('')
+      }
+    } finally {
+      setAddingItem(false)
+    }
+  }
+
   // ── Tasks ──────────────────────────────────────────────────────────────────
-  const [listTasks,    setListTasks]    = useState([])
-  const [loadingTasks, setLoadingTasks] = useState(true)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [addingTask,   setAddingTask]   = useState(false)
+  const [listTasks,     setListTasks]     = useState([])
+  const [loadingTasks,  setLoadingTasks]  = useState(true)
+  const [newTaskTitle,  setNewTaskTitle]  = useState('')
+  const [newTaskAssignee, setNewTaskAssignee] = useState('')
+  const [newTaskDueDate,  setNewTaskDueDate]  = useState('')
+  const [addingTask,    setAddingTask]    = useState(false)
   const addInputRef = useRef(null)
 
   const fetchTasks = useCallback(async () => {
     setLoadingTasks(true)
     const { data } = await supabase
       .from('tasks')
-      .select('id, title, status, due_date, archived')
+      .select('id, title, status, due_date, archived, assigned_to')
       .eq('list_id', listId)
       .eq('archived', false)
       .order('due_date', { ascending: true, nullsFirst: false })
@@ -156,17 +235,21 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
         .from('tasks')
         .insert({
           title,
-          list_id:    listId,
-          created_by: currentUser?.id,
-          status:     'todo',
-          priority:   'medium',
-          archived:   false,
+          list_id:     listId,
+          created_by:  currentUser?.id,
+          assigned_to: newTaskAssignee || currentUser?.id || null,
+          due_date:    newTaskDueDate  || null,
+          status:      'todo',
+          priority:    'medium',
+          archived:    false,
         })
-        .select('id, title, status, due_date, archived')
+        .select('id, title, status, due_date, archived, assigned_to')
         .single()
       if (data) {
         setListTasks(prev => [data, ...prev])
         setNewTaskTitle('')
+        setNewTaskAssignee('')
+        setNewTaskDueDate('')
         addInputRef.current?.focus()
       }
     } finally {
@@ -196,7 +279,7 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
                 if (e.key === 'Escape') { setEditingName(false) }
               }}
               disabled={savingName}
-              className="font-display text-2xl text-sage-800 bg-transparent border-b-2 border-sage-400 focus:outline-none flex-1 min-w-0"
+              className="font-display text-2xl text-sage-800 bg-transparent border-b-2 focus:outline-none flex-1 min-w-0"
               style={{ borderColor: listColor }}
             />
           ) : (
@@ -216,7 +299,7 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
         </p>
       </div>
 
-      <div className="px-4 md:px-8 py-6 max-w-3xl space-y-10">
+      <div className="px-4 md:px-8 py-6 max-w-3xl space-y-8">
 
         {/* ── Section 1: Description ── */}
         <section>
@@ -245,13 +328,7 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
               <Image size={12} />
               {uploadingPhoto ? 'Uploading…' : 'Add Photo'}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,image/*"
-              className="hidden"
-              onChange={handlePhotoUpload}
-            />
+            <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,image/*" className="hidden" onChange={handlePhotoUpload} />
           </div>
 
           {photos.length === 0 ? (
@@ -265,12 +342,9 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {photos.map(photo => (
-                <div
-                  key={photo.id}
-                  className="relative aspect-square rounded-xl overflow-hidden border border-sage-100 shadow-sm group"
-                >
+                <div key={photo.id} className="relative aspect-square rounded-xl overflow-hidden border border-sage-100 shadow-sm group">
                   <img src={photo.url} alt="" className="w-full h-full object-cover" />
-                  {photo.created_by === currentUser?.id && (
+                  {(photo.created_by === currentUser?.id || !photo.created_by) && (
                     <button
                       onClick={() => handlePhotoDelete(photo)}
                       disabled={deletingPhotoId === photo.id}
@@ -294,7 +368,79 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
           )}
         </section>
 
-        {/* ── Section 3: Tasks ── */}
+        {/* ── Section 3: Items ── */}
+        <section className="bg-stone-50 rounded-xl p-4 border border-stone-100">
+          <p className="text-xs font-semibold text-sage-400 uppercase tracking-widest mb-3">Items</p>
+
+          {loadingItems ? (
+            <p className="text-xs text-sage-300 py-2">Loading…</p>
+          ) : (
+            <div className="space-y-0.5">
+              {/* Open items */}
+              {openItems.map(item => (
+                <div key={item.id} className="flex items-center gap-2.5 py-1.5 group">
+                  <button
+                    onClick={() => handleToggleItem(item.id, item.done)}
+                    className="shrink-0 w-4 h-4 rounded border-2 border-sage-300 hover:border-sage-500 flex items-center justify-center transition-colors bg-white"
+                  />
+                  <span className="flex-1 text-sm text-sage-800">{item.title}</span>
+                  <button
+                    onClick={() => handleDeleteItem(item.id)}
+                    className="opacity-0 group-hover:opacity-100 text-sage-300 hover:text-red-400 transition-all shrink-0"
+                    title="Delete item"
+                  >
+                    <XIcon size={12} />
+                  </button>
+                </div>
+              ))}
+
+              {/* Inline add item */}
+              <form onSubmit={handleAddItem} className="flex items-center gap-2.5 py-1.5 mt-1">
+                <div className="shrink-0 w-4 h-4 rounded border-2 border-dashed border-sage-200 flex-none" />
+                <input
+                  value={newItemTitle}
+                  onChange={e => setNewItemTitle(e.target.value)}
+                  placeholder="Add an item…"
+                  className="flex-1 text-sm text-sage-800 bg-transparent focus:outline-none placeholder-sage-300"
+                />
+                <button
+                  type="submit"
+                  disabled={!newItemTitle.trim() || addingItem}
+                  className="shrink-0 text-sage-300 hover:text-sage-600 disabled:opacity-30 transition-colors"
+                  title="Add item"
+                >
+                  <Plus size={14} />
+                </button>
+              </form>
+
+              {/* Done items */}
+              {doneItems.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-stone-200 space-y-0.5 opacity-50">
+                  <p className="text-xs text-sage-400 mb-1.5">Done</p>
+                  {doneItems.map(item => (
+                    <div key={item.id} className="flex items-center gap-2.5 py-1.5 group">
+                      <button
+                        onClick={() => handleToggleItem(item.id, item.done)}
+                        className="shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors bg-sage-400 border-sage-400"
+                      >
+                        <Check size={9} className="text-white" />
+                      </button>
+                      <span className="flex-1 text-sm text-sage-400 line-through">{item.title}</span>
+                      <button
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="opacity-0 group-hover:opacity-100 text-sage-300 hover:text-red-400 transition-all shrink-0"
+                      >
+                        <XIcon size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* ── Section 4: Tasks ── */}
         <section>
           <p className="text-xs font-semibold text-sage-400 uppercase tracking-widest mb-3">Tasks</p>
 
@@ -317,6 +463,9 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
                       className="shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors border-sage-300 hover:border-sage-500"
                     />
                     <span className="flex-1 text-sm text-sage-800">{task.title}</span>
+                    {task.assigned_to && (
+                      <UserBubble userId={task.assigned_to} allUsers={allUsers} size={5} />
+                    )}
                     {task.due_date && (
                       <span className={`text-xs shrink-0 flex items-center gap-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-sage-400'}`}>
                         <Calendar size={10} />
@@ -328,33 +477,55 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
               })}
 
               {/* Inline add task */}
-              <form onSubmit={handleAddTask} className="flex items-center gap-2 px-3 py-2 mt-1">
-                <button
-                  type="submit"
-                  disabled={!newTaskTitle.trim() || addingTask}
-                  className="shrink-0 w-5 h-5 rounded-full border-2 border-dashed border-sage-300 flex items-center justify-center hover:border-sage-500 transition-colors disabled:opacity-40"
-                  style={{ borderColor: newTaskTitle.trim() ? listColor : undefined }}
-                >
-                  {newTaskTitle.trim() && <Plus size={10} style={{ color: listColor }} />}
-                </button>
-                <input
-                  ref={addInputRef}
-                  value={newTaskTitle}
-                  onChange={e => setNewTaskTitle(e.target.value)}
-                  placeholder="Add a task…"
-                  className="flex-1 text-sm text-sage-800 bg-transparent focus:outline-none placeholder-sage-300"
-                />
-              </form>
+              <div className="mt-1">
+                <form onSubmit={handleAddTask} className="flex items-center gap-2 px-3 py-2">
+                  <button
+                    type="submit"
+                    disabled={!newTaskTitle.trim() || addingTask}
+                    className="shrink-0 w-5 h-5 rounded-full border-2 border-dashed border-sage-300 flex items-center justify-center hover:border-sage-500 transition-colors disabled:opacity-40"
+                    style={{ borderColor: newTaskTitle.trim() ? listColor : undefined }}
+                  >
+                    {newTaskTitle.trim() && <Plus size={10} style={{ color: listColor }} />}
+                  </button>
+                  <input
+                    ref={addInputRef}
+                    value={newTaskTitle}
+                    onChange={e => setNewTaskTitle(e.target.value)}
+                    placeholder="Add a task…"
+                    className="flex-1 text-sm text-sage-800 bg-transparent focus:outline-none placeholder-sage-300"
+                  />
+                </form>
 
-              {/* Done tasks — faded, below open tasks */}
+                {/* Expanded fields when title is present */}
+                {newTaskTitle.trim() && (
+                  <div className="px-3 pb-2 flex items-center gap-2">
+                    <div className="w-5 shrink-0" />
+                    <select
+                      value={newTaskAssignee}
+                      onChange={e => setNewTaskAssignee(e.target.value)}
+                      className="flex-1 text-xs border border-sage-200 rounded-lg px-2 py-1.5 text-sage-700 focus:outline-none bg-white"
+                    >
+                      <option value="">Assign to…</option>
+                      {(allUsers ?? []).map(u => (
+                        <option key={u.id} value={u.id}>{u.name ?? u.email}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      value={newTaskDueDate}
+                      onChange={e => setNewTaskDueDate(e.target.value)}
+                      className="flex-1 text-xs border border-sage-200 rounded-lg px-2 py-1.5 text-sage-700 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Done tasks — faded */}
               {doneTasks.length > 0 && (
                 <div className="mt-4 space-y-1 opacity-50">
                   <p className="text-xs text-sage-400 px-3 mb-1">Completed</p>
                   {doneTasks.map(task => (
-                    <div
-                      key={task.id}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-sage-100"
-                    >
+                    <div key={task.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-sage-100">
                       <button
                         onClick={() => handleToggle(task.id, task.status)}
                         className="shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors bg-sage-400 border-sage-400"
@@ -362,6 +533,9 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
                         <Check size={11} className="text-white" />
                       </button>
                       <span className="flex-1 text-sm text-sage-400 line-through">{task.title}</span>
+                      {task.assigned_to && (
+                        <UserBubble userId={task.assigned_to} allUsers={allUsers} size={5} />
+                      )}
                       {task.due_date && (
                         <span className="text-xs text-sage-300 shrink-0 flex items-center gap-1">
                           <Calendar size={10} />

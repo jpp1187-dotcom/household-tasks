@@ -140,10 +140,15 @@ export function TaskProvider({ children }) {
   async function addList(list) {
     const { data, error } = await supabase
       .from('lists')
-      .insert({ name: list.name, icon: list.icon ?? '📋', color: list.color ?? '#4a7c4a' })
+      .insert({
+        name:       list.name,
+        icon:       list.icon       ?? '📋',
+        color:      list.color      ?? '#4a7c4a',
+        created_by: list.createdBy  ?? currentUser?.id ?? null,
+      })
       .select()
       .single()
-    if (error) throw error
+    if (error) { console.error('[TaskContext] addList error:', error.message); throw error }
     const newList = mapList(data)
     setLists(prev => [...prev, newList])
     return newList
