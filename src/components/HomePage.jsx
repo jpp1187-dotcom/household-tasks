@@ -180,6 +180,16 @@ export default function HomePage({ navigate }) {
     setShowTzModal(false)
   }
 
+  // ── Puzzle of the Day ──────────────────────────────────────────────────────
+  const [todayPuzzles, setTodayPuzzles] = useState(null) // null=loading, []=none, [...]=found
+
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    supabase.from('puzzles').select('id, type').eq('active_date', todayStr)
+      .then(({ data }) => setTodayPuzzles(data ?? []))
+      .catch(() => setTodayPuzzles([]))
+  }, [])
+
   // ── Finance data ────────────────────────────────────────────────────────────
   const [billsTotal, setBillsTotal] = useState(null)
   const [spendTotal, setSpendTotal] = useState(null)
@@ -323,13 +333,47 @@ export default function HomePage({ navigate }) {
         </Card>
 
         {/* 🧩 Puzzle of the Day */}
-        <Card onClick={() => navigate('puzzles')} className="flex flex-col items-center justify-center p-6 text-center">
+        <Card className="flex flex-col items-center justify-center p-6 text-center">
           <p className="text-xs font-semibold text-sage-400 uppercase tracking-wide mb-4">🧩 Puzzle of the Day</p>
-          <p className="text-5xl mb-4">🧩</p>
-          <p className="text-xs text-sage-400 mb-5">Coming soon</p>
-          <button disabled className="px-5 py-2 text-sm font-semibold text-sage-300 bg-sage-50 border border-sage-200 rounded-xl cursor-not-allowed">
-            Play
-          </button>
+          {todayPuzzles === null ? (
+            /* loading */
+            <>
+              <div className="w-8 h-8 rounded-full border-2 border-sage-200 border-t-sage-400 animate-spin mb-4" />
+              <p className="text-xs text-sage-300">Checking puzzles…</p>
+            </>
+          ) : todayPuzzles.length > 0 ? (
+            /* puzzles available */
+            <>
+              <p className="text-5xl mb-3">🧩</p>
+              <p className="text-sm font-semibold text-sage-700 mb-1">
+                {todayPuzzles.length === 1
+                  ? `1 puzzle today`
+                  : `${todayPuzzles.length} puzzles today →`}
+              </p>
+              <p className="text-xs text-sage-400 mb-5">
+                {todayPuzzles.map(p => p.type === 'quad' ? 'The Quad' : 'Mini Crossword').join(' & ')}
+              </p>
+              <button
+                onClick={() => navigate('puzzles')}
+                className="px-5 py-2 text-sm font-semibold text-white bg-sage-600 rounded-xl hover:bg-sage-700 transition-colors"
+              >
+                Play
+              </button>
+            </>
+          ) : (
+            /* no puzzles today */
+            <>
+              <p className="text-5xl mb-3">😶</p>
+              <p className="text-sm font-semibold text-sage-700 mb-1">No puzzle today</p>
+              <p className="text-xs text-sage-400 mb-5">Be the first to submit one!</p>
+              <button
+                onClick={() => navigate('puzzles')}
+                className="px-5 py-2 text-sm font-semibold text-white bg-sage-600 rounded-xl hover:bg-sage-700 transition-colors"
+              >
+                Submit one
+              </button>
+            </>
+          )}
         </Card>
 
         {/* 💰 Financial Overview */}

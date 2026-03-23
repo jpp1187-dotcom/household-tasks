@@ -15,6 +15,7 @@ import ListPage from './components/ListPage'
 import SharedNotesPage from './components/SharedNotesPage'
 import FinancesPage from './components/FinancesPage'
 import PuzzlesPage from './components/PuzzlesPage'
+import RecipesPage from './components/RecipesPage'
 import LoginPage from './components/LoginPage'
 import { supabase } from './lib/supabase'
 
@@ -167,6 +168,7 @@ function AppMain() {
       case 'shared-notes': return 'Shared Notes'
       case 'finances':     return 'Finances'
       case 'puzzles':      return 'Puzzles'
+      case 'recipes':      return 'Recipes'
       case 'profile':      return 'Profile'
       default:             return 'GormBase'
     }
@@ -193,6 +195,8 @@ function AppMain() {
         return <FinancesPage />
       case 'puzzles':
         return <PuzzlesPage />
+      case 'recipes':
+        return <RecipesPage />
       case 'profile':
         return <ProfilePage />
       default:

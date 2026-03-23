@@ -181,6 +181,11 @@ export default function Sidebar({
           <span>Puzzles</span>
         </button>
 
+        <button onClick={() => navigate('recipes')} className={navClass(activeView === 'recipes')}>
+          <span className="text-base leading-none w-4 text-center">🍳</span>
+          <span>Recipes</span>
+        </button>
+
         <button onClick={() => navigate('shared-notes')} className={navClass(activeView === 'shared-notes')}>
           <span className="text-base leading-none w-4 text-center">📝</span>
           <span>Shared Notes</span>
