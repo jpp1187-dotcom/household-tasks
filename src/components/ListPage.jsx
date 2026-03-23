@@ -3,7 +3,6 @@ import { Check, Calendar, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { DOMAIN_CONFIG } from '../lib/domains'
 import QuickTaskModal from './QuickTaskModal'
 
 const PRIORITY_STYLES = {
@@ -16,12 +15,11 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
-export default function DomainListPage({ domain }) {
+export default function ListPage({ listId, listName, listIcon }) {
   const { allUsers } = useAuth()
   const { updateTask } = useTasks()
-  const cfg = DOMAIN_CONFIG[domain] ?? DOMAIN_CONFIG.housing
 
-  const [domainTasks, setDomainTasks] = useState([])
+  const [listTasks, setListTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [residentFilter, setResidentFilter] = useState(null)
   const [showAddTask, setShowAddTask] = useState(false)
@@ -31,22 +29,22 @@ export default function DomainListPage({ domain }) {
     const { data, error } = await supabase
       .from('tasks')
       .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived, domain_tag,
+        id, title, status, priority, due_date, assigned_to, archived,
         resident:residents(id, legal_name, preferred_name),
         household:households(id, name)
       `)
-      .eq('domain_tag', domain)
+      .eq('list_id', listId)
       .eq('archived', false)
       .order('due_date', { ascending: true, nullsFirst: false })
 
     if (error) {
-      console.error('[DomainListPage] fetch error:', error.message)
-      setDomainTasks([])
+      console.error('[ListPage] fetch error:', error.message)
+      setListTasks([])
     } else {
-      setDomainTasks(data ?? [])
+      setListTasks(data ?? [])
     }
     setLoading(false)
-  }, [domain])
+  }, [listId])
 
   useEffect(() => {
     setResidentFilter(null)
@@ -55,7 +53,7 @@ export default function DomainListPage({ domain }) {
 
   // Build unique residents from results
   const residentMap = {}
-  domainTasks.forEach(t => {
+  listTasks.forEach(t => {
     if (t.resident?.id && !residentMap[t.resident.id]) {
       residentMap[t.resident.id] = {
         id: t.resident.id,
@@ -66,8 +64,8 @@ export default function DomainListPage({ domain }) {
   const filterResidents = Object.values(residentMap)
 
   const visibleTasks = residentFilter
-    ? domainTasks.filter(t => t.resident?.id === residentFilter)
-    : domainTasks
+    ? listTasks.filter(t => t.resident?.id === residentFilter)
+    : listTasks
 
   const openCount = visibleTasks.filter(t => t.status !== 'done').length
   const doneCount = visibleTasks.filter(t => t.status === 'done').length
@@ -75,8 +73,7 @@ export default function DomainListPage({ domain }) {
   async function handleToggle(taskId, currentStatus) {
     const newStatus = currentStatus === 'done' ? 'todo' : 'done'
     await updateTask(taskId, { status: newStatus })
-    // Optimistic update
-    setDomainTasks(prev => prev.map(t =>
+    setListTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, status: newStatus } : t
     ))
   }
@@ -91,10 +88,8 @@ export default function DomainListPage({ domain }) {
       <div className="sticky top-0 bg-sage-50 z-10 px-4 md:px-8 pt-6 pb-4 border-b border-sage-100">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-lg ${cfg.color} flex items-center justify-center text-lg`}>
-              {cfg.icon}
-            </div>
-            <h2 className="font-display text-2xl text-sage-800">{cfg.label}</h2>
+            <span className="text-2xl">{listIcon}</span>
+            <h2 className="font-display text-2xl text-sage-800">{listName}</h2>
           </div>
           <button
             onClick={() => setShowAddTask(true)}
@@ -114,7 +109,7 @@ export default function DomainListPage({ domain }) {
               onClick={() => setResidentFilter(null)}
               className={`px-3 py-1 text-xs rounded-full border transition-colors
                 ${!residentFilter
-                  ? `${cfg.bg} ${cfg.border} ${cfg.text} font-medium`
+                  ? 'bg-sage-100 border-sage-300 text-sage-700 font-medium'
                   : 'border-sage-200 text-sage-500 hover:bg-sage-50'}`}
             >
               All residents
@@ -125,7 +120,7 @@ export default function DomainListPage({ domain }) {
                 onClick={() => setResidentFilter(residentFilter === r.id ? null : r.id)}
                 className={`px-3 py-1 text-xs rounded-full border transition-colors
                   ${residentFilter === r.id
-                    ? `${cfg.bg} ${cfg.border} ${cfg.text} font-medium`
+                    ? 'bg-sage-100 border-sage-300 text-sage-700 font-medium'
                     : 'border-sage-200 text-sage-500 hover:bg-sage-50'}`}
               >
                 {r.name}
@@ -141,8 +136,8 @@ export default function DomainListPage({ domain }) {
           <p className="text-sm text-sage-300 text-center py-12">Loading tasks…</p>
         ) : visibleTasks.length === 0 ? (
           <div className="text-center py-20 text-sage-300">
-            <p className="text-4xl mb-3">{cfg.icon}</p>
-            <p className="text-sm">No tasks in {cfg.label} yet.</p>
+            <p className="text-4xl mb-3">{listIcon}</p>
+            <p className="text-sm">No tasks in {listName} yet.</p>
           </div>
         ) : (
           <div className="space-y-2 max-w-4xl">
@@ -155,7 +150,6 @@ export default function DomainListPage({ domain }) {
                   className={`flex items-center gap-3 px-4 py-3 bg-white rounded-xl border shadow-sm
                     ${isOverdue ? 'border-l-4 border-l-red-400 border-r-sage-100 border-t-sage-100 border-b-sage-100' : 'border-sage-100'}`}
                 >
-                  {/* Checkbox */}
                   <button
                     onClick={() => handleToggle(task.id, task.status)}
                     className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
@@ -166,7 +160,6 @@ export default function DomainListPage({ domain }) {
                     {task.status === 'done' && <Check size={11} className="text-white" />}
                   </button>
 
-                  {/* Title + subtitle */}
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm ${task.status === 'done' ? 'line-through text-sage-300' : 'text-sage-800'}`}>
                       {task.title}
@@ -180,17 +173,14 @@ export default function DomainListPage({ domain }) {
                     )}
                   </div>
 
-                  {/* Assignee avatar */}
                   {assignee && (
                     <span title={assignee.name} className="text-base shrink-0">{assignee.avatar ?? '🧑'}</span>
                   )}
 
-                  {/* Priority */}
                   <span className={`text-xs px-2 py-0.5 rounded-full border capitalize shrink-0 ${PRIORITY_STYLES[task.priority]}`}>
                     {task.priority}
                   </span>
 
-                  {/* Due date */}
                   {task.due_date && (
                     <span className={`text-xs flex items-center gap-1 shrink-0 ${isOverdue ? 'text-red-500 font-medium' : 'text-sage-400'}`}>
                       <Calendar size={11} />
@@ -206,7 +196,7 @@ export default function DomainListPage({ domain }) {
 
       {showAddTask && (
         <QuickTaskModal
-          prefillDomain={domain}
+          prefillListId={listId}
           onClose={() => { setShowAddTask(false); fetchTasks() }}
         />
       )}

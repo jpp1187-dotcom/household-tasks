@@ -6,7 +6,6 @@ import { useTasks } from '../contexts/TaskContext'
 import ResidentRegistrationModal from './ResidentRegistrationModal'
 import NotesPanel from './NotesPanel'
 import QuickTaskModal from './QuickTaskModal'
-import { DOMAIN_CONFIG } from '../lib/domains'
 
 const PRIORITY_STYLES = {
   high:   'bg-red-50 text-red-600 border-red-200',
@@ -73,7 +72,7 @@ function TaskItem({ task, onToggle }) {
 export default function ResidentProfile({ residentId, onBack }) {
   const { isAdmin } = useAuth()
   const { residents, households, activity } = useHouseholds()
-  const { tasks, toggleDone } = useTasks()
+  const { tasks, toggleDone, lists } = useTasks()
   const [tab, setTab] = useState('overview')
   const [showSensitive, setShowSensitive] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -88,12 +87,12 @@ export default function ResidentProfile({ residentId, onBack }) {
   const openTasks = residentTasks.filter(t => t.status !== 'done')
   const doneTasks = residentTasks.filter(t => t.status === 'done')
 
-  // Group open tasks by domain_tag
-  const tasksByDomain = {}
+  // Group open tasks by list
+  const tasksByList = {}
   openTasks.forEach(t => {
-    const key = t.domainTag || 'none'
-    if (!tasksByDomain[key]) tasksByDomain[key] = []
-    tasksByDomain[key].push(t)
+    const key = t.listId || 'none'
+    if (!tasksByList[key]) tasksByList[key] = []
+    tasksByList[key].push(t)
   })
 
   // Activity for this resident
@@ -230,22 +229,21 @@ export default function ResidentProfile({ residentId, onBack }) {
             </div>
           ) : (
             <>
-              {/* Tasks grouped by domain */}
-              {Object.entries(tasksByDomain).map(([key, domTasks]) => {
-                const cfg = key !== 'none' ? DOMAIN_CONFIG[key] : null
+              {/* Tasks grouped by list */}
+              {Object.entries(tasksByList).map(([key, listTasks]) => {
+                const list = key !== 'none' ? lists.find(l => l.id === key) : null
                 return (
                   <div key={key} className="mb-5">
-                    {cfg ? (
-                      <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
-                        <span>{cfg.icon}</span>
-                        <span>{cfg.label}</span>
-                        <span className="text-sage-400">({domTasks.length})</span>
-                      </p>
-                    ) : (
-                      <p className="text-xs font-semibold text-sage-400 mb-2">No domain ({domTasks.length})</p>
-                    )}
+                    <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
+                      {list ? (
+                        <><span>{list.icon}</span><span>{list.name}</span></>
+                      ) : (
+                        <span>No list</span>
+                      )}
+                      <span className="text-sage-400">({listTasks.length})</span>
+                    </p>
                     <div className="space-y-2">
-                      {domTasks.map(t => (
+                      {listTasks.map(t => (
                         <TaskItem key={t.id} task={t} onToggle={toggleDone} />
                       ))}
                     </div>

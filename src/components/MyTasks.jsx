@@ -3,7 +3,6 @@ import { Check, AlertCircle, Clock, Calendar, Minus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { DOMAIN_CONFIG } from '../lib/domains'
 
 const PRIORITY_STYLES = {
   high:   'bg-red-50 text-red-600 border-red-200',
@@ -32,18 +31,15 @@ function isDueThisWeek(dueDate) {
 }
 
 function getTaskContext(task) {
+  const listLabel = task.list ? `${task.list.icon} ${task.list.name}` : null
   if (task.resident?.legal_name) {
     const name = task.resident.preferred_name || task.resident.legal_name
-    const domain = task.domain_tag ? (DOMAIN_CONFIG[task.domain_tag]?.label ?? task.domain_tag) : null
-    return domain ? `${name} · ${domain}` : name
+    return listLabel ? `${name} · ${listLabel}` : name
   }
   if (task.household?.name) {
-    return task.household.name
+    return listLabel ? `${task.household.name} · ${listLabel}` : task.household.name
   }
-  if (task.domain_tag) {
-    return DOMAIN_CONFIG[task.domain_tag]?.label ?? task.domain_tag
-  }
-  return 'Personal task'
+  return listLabel ?? 'No list'
 }
 
 function TaskRow({ task, overdue, onToggle }) {
@@ -123,9 +119,10 @@ export default function MyTasks() {
     const { data, error } = await supabase
       .from('tasks')
       .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived, domain_tag,
+        id, title, status, priority, due_date, assigned_to, created_by, archived,
         resident:residents(legal_name, preferred_name),
-        household:households(name)
+        household:households(name),
+        list:lists(name, icon)
       `)
       .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
       .eq('archived', false)
@@ -150,9 +147,10 @@ export default function MyTasks() {
     const { data } = await supabase
       .from('tasks')
       .select(`
-        id, title, status, priority, due_date, assigned_to, created_by, archived, domain_tag,
+        id, title, status, priority, due_date, assigned_to, created_by, archived,
         resident:residents(legal_name, preferred_name),
-        household:households(name)
+        household:households(name),
+        list:lists(name, icon)
       `)
       .or(`assigned_to.eq.${currentUser.id},created_by.eq.${currentUser.id}`)
       .eq('archived', false)

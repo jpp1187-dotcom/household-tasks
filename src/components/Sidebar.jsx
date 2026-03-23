@@ -8,7 +8,6 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
 import { getFavorites, removeFavorite, addFavorite } from '../lib/favorites'
-import { DOMAIN_CONFIG } from '../lib/domains'
 
 function SidebarAvatar({ name }) {
   const initials = (name ?? '?')
@@ -29,18 +28,19 @@ function SidebarAvatar({ name }) {
 }
 
 export default function Sidebar({
-  activeView, activeDomain,
+  activeView, activeListId,
   navigate, onClose,
   unreadCount = 0,
 }) {
   const { currentUser, signOut } = useAuth()
-  const { tasks } = useTasks()
+  const { tasks, lists } = useTasks()
   const { households, residents } = useHouseholds()
 
-  const [domainsOpen, setDomainsOpen] = useState(true)
   const [favorites, setFavorites] = useState([])
   const [showPinSearch, setShowPinSearch] = useState(false)
   const [pinSearch, setPinSearch] = useState('')
+
+  const activeLists = lists.filter(l => !l.archived)
 
   useEffect(() => {
     if (!currentUser?.id) return
@@ -142,32 +142,22 @@ export default function Sidebar({
           )}
         </button>
 
-        {/* ── Domains ────────────────────────────── */}
-        <button
-          onClick={() => setDomainsOpen(v => !v)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-sage-400 hover:bg-sage-50 transition-colors mb-0.5 mt-3"
-        >
-          <span className="flex-1 text-left text-xs font-semibold uppercase tracking-widest">Domains</span>
-          {domainsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </button>
+        {/* ── Lists ────────────────────────────── */}
+        <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">Lists</p>
 
-        {domainsOpen && (
-          <div className="ml-2 mb-1">
-            {Object.entries(DOMAIN_CONFIG).filter(([k]) => k !== 'personal').map(([key, cfg]) => (
-              <button
-                key={key}
-                onClick={() => navigate('domain-list', { domain: key })}
-                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
-                  ${activeView === 'domain-list' && activeDomain === key
-                    ? 'bg-sage-100 text-sage-800 font-medium'
-                    : 'text-sage-500 hover:bg-sage-50'}`}
-              >
-                <span className="text-sm leading-none">{cfg.icon}</span>
-                <span className="truncate">{cfg.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        {activeLists.map(list => (
+          <button
+            key={list.id}
+            onClick={() => navigate('list', { listId: list.id })}
+            className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm mb-0.5 transition-colors
+              ${activeView === 'list' && activeListId === list.id
+                ? 'bg-sage-100 text-sage-800 font-medium'
+                : 'text-sage-500 hover:bg-sage-50'}`}
+          >
+            <span className="text-sm leading-none">{list.icon}</span>
+            <span className="truncate">{list.name}</span>
+          </button>
+        ))}
 
         {/* ── Favorites ────────────────────────────── */}
         <p className="px-3 text-xs font-semibold text-sage-400 uppercase tracking-widest mb-1 mt-4">

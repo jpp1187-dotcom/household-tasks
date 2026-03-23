@@ -3,33 +3,32 @@ import { X, Search } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { useHouseholds } from '../contexts/HouseholdContext'
-import { DOMAIN_CONFIG } from '../lib/domains'
 
-export default function QuickTaskModal({ onClose, prefillResident = null, prefillHousehold = null, prefillDomain = null }) {
+export default function QuickTaskModal({ onClose, prefillResident = null, prefillHousehold = null, prefillListId = null }) {
   const { currentUser, allUsers } = useAuth()
   const { addTask, lists } = useTasks()
   const { residents, households } = useHouseholds()
 
-  const [title, setTitle]                     = useState('')
-  const [residentSearch, setResidentSearch]   = useState(
+  const activeLists = lists.filter(l => !l.archived)
+
+  const [title, setTitle]                       = useState('')
+  const [listId, setListId]                     = useState(prefillListId ?? activeLists[0]?.id ?? '')
+  const [listError, setListError]               = useState(false)
+  const [residentSearch, setResidentSearch]     = useState(
     prefillResident ? (prefillResident.preferredName || prefillResident.legalName) : ''
   )
   const [selectedResident, setSelectedResident] = useState(prefillResident)
   const [selectedHouseholdId, setSelectedHouseholdId] = useState(
     prefillHousehold?.id ?? prefillResident?.householdId ?? ''
   )
-  const [domainTag, setDomainTag]             = useState(prefillDomain ?? '')
-  const [domainError, setDomainError]         = useState(false)
-  const [listId, setListId]                   = useState('')
-  const [assignedTo, setAssignedTo]           = useState(currentUser?.id ?? '')
-  const [priority, setPriority]               = useState('medium')
-  const [dueDate, setDueDate]                 = useState('')
-  const [saving, setSaving]                   = useState(false)
+  const [assignedTo, setAssignedTo]             = useState(currentUser?.id ?? '')
+  const [priority, setPriority]                 = useState('medium')
+  const [dueDate, setDueDate]                   = useState('')
+  const [saving, setSaving]                     = useState(false)
   const [showResidentList, setShowResidentList] = useState(false)
 
-  const activeResidents = residents.filter(r => !r.archived)
+  const activeResidents  = residents.filter(r => !r.archived)
   const activeHouseholds = households.filter(h => !h.archived)
-  const personalLists = lists.filter(l => !l.householdId && !l.archived)
 
   const filteredResidents = useMemo(() => {
     if (!residentSearch.trim()) return activeResidents
@@ -50,22 +49,20 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
   function clearResident() {
     setSelectedResident(null)
     setResidentSearch('')
-    // Only clear household if it was auto-filled from the resident
     if (!prefillHousehold) setSelectedHouseholdId('')
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!title.trim()) return
-    if (!domainTag) { setDomainError(true); return }
+    if (!listId) { setListError(true); return }
     setSaving(true)
     try {
       await addTask({
         title:       title.trim(),
+        listId,
         residentId:  selectedResident?.id ?? null,
         householdId: selectedHouseholdId || null,
-        domainTag,
-        ...(listId ? { listId } : {}),
         assignedTo:  assignedTo || null,
         createdBy:   currentUser?.id,
         priority,
@@ -97,6 +94,21 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
             <label className={labelCls}>Task *</label>
             <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
               placeholder="What needs doing?" className={inputCls} />
+          </div>
+
+          {/* List (required) */}
+          <div>
+            <label className={labelCls}>List *</label>
+            <select
+              value={listId}
+              onChange={e => { setListId(e.target.value); setListError(false) }}
+              className={`${inputCls} ${listError ? 'border-red-400 ring-1 ring-red-300' : ''}`}
+            >
+              {activeLists.map(l => (
+                <option key={l.id} value={l.id}>{l.icon} {l.name}</option>
+              ))}
+            </select>
+            {listError && <p className="text-xs text-red-500 mt-1">Please select a list.</p>}
           </div>
 
           {/* Resident selector */}
@@ -150,37 +162,6 @@ export default function QuickTaskModal({ onClose, prefillResident = null, prefil
               <p className="text-xs text-sage-400 mt-1">Auto-filled from resident's household.</p>
             )}
           </div>
-
-          {/* Domain tag */}
-          <div>
-            <label className={labelCls}>Domain *</label>
-            <select
-              value={domainTag}
-              onChange={e => { setDomainTag(e.target.value); setDomainError(false) }}
-              className={`${inputCls} ${domainError ? 'border-red-400 ring-1 ring-red-300' : ''}`}
-            >
-              <option value="">Select a domain…</option>
-              {Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => (
-                <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
-              ))}
-            </select>
-            {domainError && (
-              <p className="text-xs text-red-500 mt-1">Please select a domain.</p>
-            )}
-          </div>
-
-          {/* List */}
-          {personalLists.length > 0 && (
-            <div>
-              <label className={labelCls}>Add to list (optional)</label>
-              <select value={listId} onChange={e => setListId(e.target.value)} className={inputCls}>
-                <option value="">— No list —</option>
-                {personalLists.map(l => (
-                  <option key={l.id} value={l.id}>{l.icon} {l.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-3">
             {/* Assigned to */}

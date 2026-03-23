@@ -3,7 +3,6 @@ import { Plus, ChevronDown, ChevronUp, FileText, ClipboardList } from 'lucide-re
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
-import { DOMAIN_CONFIG } from '../lib/domains'
 import QuickTaskModal from './QuickTaskModal'
 import { format } from 'date-fns'
 
@@ -14,23 +13,10 @@ function formatDate(str) {
   } catch { return str }
 }
 
-// ── Domain guesser ─────────────────────────────────────────────────────────────
-function guessDomain(sentence) {
-  const s = sentence.toLowerCase()
-  if (/housing|lease|landlord|rent|evict|unit|apartment|shelter/.test(s)) return 'housing'
-  if (/clinical|appointment|medical|doctor|prescri|hospital|health|diagnos|medication/.test(s)) return 'clinical'
-  if (/benefits|medicaid|medicare|snap|insurance|ssi|ssdi|application|eligib/.test(s)) return 'benefits'
-  if (/court|justice|legal|attorney|probation|parole|charge|hearing|warrant/.test(s)) return 'justice'
-  if (/care|refer|coordinat|discharge|transition|placement|service plan/.test(s)) return 'care_coordination'
-  if (/behavioral|mental|therapy|counseling|substance|addiction|psychiatric|psych/.test(s)) return 'behavioral_health'
-  return null
-}
-
 const ACTION_VERBS = /\b(follow up|schedule|call|send|submit|contact|arrange|complete|review|update|refer|connect|ensure|request|obtain|assist|provide)\b/i
 
 function extractTaskSuggestions(planText) {
   if (!planText?.trim()) return []
-  // Split on periods, semicolons, newlines
   const sentences = planText
     .split(/[.;\n]+/)
     .map(s => s.trim())
@@ -40,7 +26,6 @@ function extractTaskSuggestions(planText) {
     .slice(0, 8)
     .map(s => ({
       title: s.charAt(0).toUpperCase() + s.slice(1),
-      domain_tag: guessDomain(s),
     }))
 }
 
@@ -117,7 +102,6 @@ function SOAPForm({ onSave, onCancel, residentId }) {
     debounceRef.current = setTimeout(() => {
       const newSuggestions = extractTaskSuggestions(form.plan)
       setSuggestions(newSuggestions)
-      // Pre-check all new suggestions
       const newChecked = {}
       newSuggestions.forEach((_, i) => { newChecked[i] = true })
       setChecked(newChecked)
@@ -130,7 +114,6 @@ function SOAPForm({ onSave, onCancel, residentId }) {
   async function handleSave() {
     if (saving) return
     setSaving(true)
-    // 1. Save the note
     await onSave('soap', form, suggestions.filter((_, i) => checked[i]))
     setSaving(false)
   }
@@ -157,25 +140,17 @@ function SOAPForm({ onSave, onCancel, residentId }) {
       {suggestions.length > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
           <p className="text-xs font-semibold text-green-700 mb-2">Suggested tasks from Plan</p>
-          {suggestions.map((s, i) => {
-            const cfg = s.domain_tag ? DOMAIN_CONFIG[s.domain_tag] : null
-            return (
-              <label key={i} className="flex items-start gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={!!checked[i]}
-                  onChange={e => setChecked(prev => ({ ...prev, [i]: e.target.checked }))}
-                  className="mt-0.5 shrink-0 accent-green-600"
-                />
-                <span className="flex-1 text-xs text-sage-800 leading-snug">{s.title}</span>
-                {cfg && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${cfg.bg} ${cfg.text} border ${cfg.border}`}>
-                    {cfg.icon} {cfg.label}
-                  </span>
-                )}
-              </label>
-            )
-          })}
+          {suggestions.map((s, i) => (
+            <label key={i} className="flex items-start gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={!!checked[i]}
+                onChange={e => setChecked(prev => ({ ...prev, [i]: e.target.checked }))}
+                className="mt-0.5 shrink-0 accent-green-600"
+              />
+              <span className="flex-1 text-xs text-sage-800 leading-snug">{s.title}</span>
+            </label>
+          ))}
         </div>
       )}
 
@@ -236,28 +211,9 @@ function FreeWriteForm({ onSave, onCancel, residentId }) {
 }
 
 // ── NotesPanel ────────────────────────────────────────────────────────────────
-/**
- * NotesPanel — SOAP + free-write notes for residents and households.
- * Pass residentId to enable task suggestions on SOAP notes.
- *
- * Required SQL:
- * CREATE TABLE IF NOT EXISTS notes (
- *   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- *   entity_type text NOT NULL,
- *   entity_id uuid NOT NULL,
- *   note_type text NOT NULL,
- *   subjective text DEFAULT '',
- *   objective text DEFAULT '',
- *   assessment text DEFAULT '',
- *   plan text DEFAULT '',
- *   content text DEFAULT '',
- *   created_by uuid REFERENCES auth.users(id),
- *   created_at timestamptz DEFAULT now()
- * );
- */
 export default function NotesPanel({ entityType, entityId, allowSoap = true, residentId = null }) {
   const { currentUser, allUsers } = useAuth()
-  const { addTask } = useTasks()
+  const { addTask, lists } = useTasks()
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -300,15 +256,15 @@ export default function NotesPanel({ entityType, entityId, allowSoap = true, res
     if (err) { alert('Failed to save note: ' + err.message); return }
     setNotes(prev => [saved, ...prev])
 
-    // Create suggested tasks (SOAP only)
+    // Create suggested tasks (SOAP only) — default to first available list
+    const defaultListId = lists.filter(l => !l.archived)[0]?.id ?? null
     for (const suggestion of taskSuggestions) {
       try {
         await addTask({
           title:       suggestion.title,
           residentId:  residentId ?? entityId,
           householdId: null,
-          domainTag:   suggestion.domain_tag ?? null,
-          listId:      null,
+          listId:      defaultListId,
           assignedTo:  currentUser?.id,
           createdBy:   currentUser?.id,
           priority:    'medium',

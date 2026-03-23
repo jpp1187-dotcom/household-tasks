@@ -13,28 +13,26 @@ import ResidentListPage from './components/ResidentListPage'
 import ActivityFeed from './components/ActivityFeed'
 import ProfilePage from './components/ProfilePage'
 import UserDirectory from './components/UserDirectory'
-import AddListModal from './components/AddListModal'
 import CalendarPage from './components/CalendarPage'
 import TeamsPage from './components/TeamsPage'
 import MessagesPage from './components/MessagesPage'
 import GlobalSearch from './components/GlobalSearch'
 import QuickTaskModal from './components/QuickTaskModal'
-import DomainListPage from './components/DomainListPage'
+import ListPage from './components/ListPage'
 import LoginPage from './components/LoginPage'
 import { supabase } from './lib/supabase'
-import { DOMAIN_CONFIG } from './lib/domains'
 
 const GORMY = 'https://dhwcawykduzxtohollmx.supabase.co/storage/v1/object/public/avatars/gormy.png'
 
 // ── All-tasks page ─────────────────────────────────────────────────────────────
 function AllTasksPage() {
-  const { tasks, toggleDone } = useTasks()
+  const { tasks, toggleDone, lists } = useTasks()
   const open = tasks.filter(t => t.status !== 'done' && !t.archived)
-  const byDomain = {}
+  const byList = {}
   open.forEach(t => {
-    const key = t.domainTag || 'none'
-    if (!byDomain[key]) byDomain[key] = []
-    byDomain[key].push(t)
+    const key = t.listId || 'none'
+    if (!byList[key]) byList[key] = []
+    byList[key].push(t)
   })
 
   return (
@@ -50,16 +48,16 @@ function AllTasksPage() {
             <p className="text-sm">No open tasks.</p>
           </div>
         ) : (
-          Object.entries(byDomain).map(([key, domTasks]) => {
-            const cfg = key !== 'none' ? DOMAIN_CONFIG[key] : null
+          Object.entries(byList).map(([key, listTasks]) => {
+            const list = key !== 'none' ? lists.find(l => l.id === key) : null
             return (
               <div key={key} className="mb-6">
                 <p className="text-xs font-semibold text-sage-500 mb-2 flex items-center gap-1.5">
-                  {cfg ? <><span>{cfg.icon}</span><span>{cfg.label}</span></> : <span>No domain</span>}
-                  <span className="text-sage-400">({domTasks.length})</span>
+                  {list ? <><span>{list.icon}</span><span>{list.name}</span></> : <span>No list</span>}
+                  <span className="text-sage-400">({listTasks.length})</span>
                 </p>
                 <div className="space-y-2">
-                  {domTasks.map(t => (
+                  {listTasks.map(t => (
                     <div key={t.id} className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-sage-100 shadow-sm">
                       <button
                         onClick={() => toggleDone(t.id)}
@@ -148,13 +146,13 @@ function BellIcon({ onNavigate }) {
 // ── Inner app — has access to all contexts ────────────────────────────────────
 function AppMain() {
   const { households, dbError } = useHouseholds()
+  const { lists } = useTasks()
 
   const [activeView,         setActiveView]         = useState('home')
   const [activeHouseholdId,  setActiveHouseholdId]  = useState(null)
   const [activeResidentId,   setActiveResidentId]   = useState(null)
   const [activeHouseholdTab, setActiveHouseholdTab] = useState('details')
-  const [activeDomain,       setActiveDomain]       = useState(null)
-  const [showAddList,        setShowAddList]        = useState(false)
+  const [activeListId,       setActiveListId]       = useState(null)
   const [showQuickTask,      setShowQuickTask]      = useState(false)
   const [sidebarOpen,        setSidebarOpen]        = useState(false)
 
@@ -162,11 +160,13 @@ function AppMain() {
     setActiveView(view)
     if (params.householdId !== undefined) setActiveHouseholdId(params.householdId)
     if (params.residentId  !== undefined) setActiveResidentId(params.residentId)
-    if (params.domain      !== undefined) setActiveDomain(params.domain)
+    if (params.listId      !== undefined) setActiveListId(params.listId)
     if (params.tab         !== undefined) setActiveHouseholdTab(params.tab)
     else if (view === 'household')        setActiveHouseholdTab('details')
     setSidebarOpen(false)
   }
+
+  const activeList = lists.find(l => l.id === activeListId)
 
   function pageTitle() {
     switch (activeView) {
@@ -174,9 +174,7 @@ function AppMain() {
       case 'my-tasks':       return 'My Tasks'
       case 'all-tasks':      return 'All Tasks'
       case 'calendar':       return 'Calendar'
-      case 'domain-list':    return activeDomain
-          ? (DOMAIN_CONFIG[activeDomain]?.label ?? activeDomain)
-          : 'Domain'
+      case 'list':           return activeList ? `${activeList.icon} ${activeList.name}` : 'List'
       case 'household':      return households.find(h => h.id === activeHouseholdId)?.name ?? 'Household'
       case 'household-list': return 'Households'
       case 'resident-list':  return 'Residents'
@@ -200,8 +198,10 @@ function AppMain() {
         return <AllTasksPage />
       case 'calendar':
         return <CalendarPage />
-      case 'domain-list':
-        return <DomainListPage domain={activeDomain ?? 'housing'} key={activeDomain} />
+      case 'list':
+        return activeList
+          ? <ListPage listId={activeListId} listName={activeList.name} listIcon={activeList.icon} key={activeListId} />
+          : <HomePage navigate={navigate} />
       case 'household':
         return (
           <HouseholdDetail
@@ -282,7 +282,7 @@ function AppMain() {
       >
         <Sidebar
           activeView={activeView}
-          activeDomain={activeDomain}
+          activeListId={activeListId}
           navigate={navigate}
           onClose={() => setSidebarOpen(false)}
         />
@@ -306,13 +306,6 @@ function AppMain() {
         </div>
         {renderMain()}
       </div>
-
-      {showAddList && (
-        <AddListModal
-          onClose={() => setShowAddList(false)}
-          onCreated={() => setShowAddList(false)}
-        />
-      )}
 
       {showQuickTask && (
         <QuickTaskModal onClose={() => setShowQuickTask(false)} />
