@@ -3,6 +3,7 @@ import { CheckSquare, AlertCircle, Settings } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { supabase } from '../lib/supabase'
+import AgendaCard from './AgendaCard'
 
 const TIMEZONES = [
   'America/New_York', 'America/Chicago', 'America/Denver',
@@ -234,7 +235,7 @@ export default function HomePage({ navigate }) {
   }, [currentUser?.id])
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
+    <div className="flex-1 overflow-y-auto min-h-0 px-4 md:px-8 py-6 md:py-8">
 
       {/* Greeting */}
       <div className="mb-5">
@@ -485,6 +486,11 @@ export default function HomePage({ navigate }) {
           )}
         </Card>
 
+      </div>
+
+      {/* ── Google Agenda ── */}
+      <div className="mt-6">
+        <AgendaCard navigate={navigate} />
       </div>
 
       {/* Timezone modal */}

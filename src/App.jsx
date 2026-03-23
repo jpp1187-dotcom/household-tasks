@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Menu, Plus, Bell, Home } from 'lucide-react'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { TaskProvider, useTasks } from './contexts/TaskContext'
 import Sidebar from './components/Sidebar'
@@ -103,11 +104,19 @@ function UserAvatarBtn({ onNavigate }) {
 }
 
 // ── Dashboard header (full-screen mode, no sidebar) ───────────────────────────
-function DashboardHeader({ navigate, onNewList, onNewTask }) {
+function DashboardHeader({ navigate, onNewList, onNewTask, onMenuOpen }) {
   return (
     <>
       {/* Main bar */}
       <div className="shrink-0 bg-white border-b border-sage-100 h-14 flex items-center gap-3 px-4 md:px-6">
+        {/* Mobile hamburger — opens slide-in sidebar */}
+        <button
+          onClick={onMenuOpen}
+          className="md:hidden text-sage-500 hover:text-sage-800 transition-colors p-1 -ml-1 shrink-0"
+          aria-label="Open menu"
+        >
+          <Menu size={22} />
+        </button>
         <img src={GORMY} alt="GormBase" className="h-7 w-auto shrink-0" />
         <span className="font-display text-lg text-sage-800 shrink-0 hidden sm:block">GormBase</span>
         <div className="flex-1 hidden md:flex justify-center">
@@ -211,7 +220,7 @@ function AppMain() {
     </>
   )
 
-  // ── Dashboard: full-screen, no sidebar ──────────────────────────────────────
+  // ── Dashboard: full-screen, no sidebar (desktop) / hamburger+sidebar (mobile) ─
   if (isDashboard) {
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-sage-50">
@@ -219,8 +228,36 @@ function AppMain() {
           navigate={navigate}
           onNewList={() => setShowNewList(true)}
           onNewTask={() => setShowQuickTask(true)}
+          onMenuOpen={() => setSidebarOpen(true)}
         />
-        <div className="flex-1 overflow-hidden">
+
+        {/* Mobile sidebar backdrop */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Slide-in sidebar for mobile dashboard */}
+        <div
+          className={`
+            fixed inset-y-0 left-0 z-40
+            transform transition-transform duration-200 ease-in-out
+            md:hidden
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}
+        >
+          <Sidebar
+            activeView={activeView}
+            activeListId={activeListId}
+            navigate={navigate}
+            onClose={() => setSidebarOpen(false)}
+          />
+        </div>
+
+        {/* Main content — flex column so HomePage's flex-1 works correctly */}
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
           <HomePage navigate={navigate} />
         </div>
         {modals}
@@ -338,10 +375,23 @@ function AppShell() {
   )
 }
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+
 export default function App() {
-  return (
+  const inner = (
     <AuthProvider>
       <AppShell />
     </AuthProvider>
   )
+
+  // Only wrap with GoogleOAuthProvider when a client ID is configured
+  if (GOOGLE_CLIENT_ID) {
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        {inner}
+      </GoogleOAuthProvider>
+    )
+  }
+
+  return inner
 }

@@ -80,6 +80,7 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
   // ── Photos ─────────────────────────────────────────────────────────────────
   const [photos,          setPhotos]          = useState([])
   const [uploadingPhoto,  setUploadingPhoto]  = useState(false)
+  const [uploadError,     setUploadError]     = useState('')
   const [deletingPhotoId, setDeletingPhotoId] = useState(null)
   const fileInputRef = useRef(null)
 
@@ -96,30 +97,89 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
   async function handlePhotoUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Reset error state
+    setUploadError('')
+
+    // Validate file size (max 10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File too large — maximum size is 10 MB.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    // Sanitise filename for storage path
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const filePath  = `${listId}/${Date.now()}-${safeName}`
+
     setUploadingPhoto(true)
     try {
-      const filePath = `${listId}/${Date.now()}-${file.name}`
-      const { error: uploadError } = await supabase.storage
+      // ── 1. Upload to Supabase Storage ────────────────────────────────────
+      const { error: storageErr } = await supabase.storage
         .from('list-photos')
-        .upload(filePath, file, { upsert: true })
-      if (uploadError) { console.error('[ListPage] photo upload:', uploadError); return }
-      const { data: { publicUrl } } = supabase.storage.from('list-photos').getPublicUrl(filePath)
-      await supabase.from('list_photos').insert({
+        .upload(filePath, file, {
+          upsert:      true,
+          contentType: file.type || 'image/jpeg',
+        })
+
+      if (storageErr) {
+        console.error('[ListPage] storage upload error:', storageErr)
+        // Common bucket-not-found → friendly message
+        if (storageErr.message?.includes('Bucket not found') || storageErr.statusCode === 404) {
+          setUploadError('Storage bucket "list-photos" not found. Run the SQL migration in Supabase to create it.')
+        } else if (storageErr.statusCode === 403 || storageErr.message?.includes('policy')) {
+          setUploadError('Upload permission denied. Check the RLS policy on the list-photos bucket.')
+        } else {
+          setUploadError(`Upload failed: ${storageErr.message}`)
+        }
+        return
+      }
+
+      // ── 2. Get public URL ─────────────────────────────────────────────────
+      const { data: urlData } = supabase.storage
+        .from('list-photos')
+        .getPublicUrl(filePath)
+      const publicUrl = urlData?.publicUrl
+      if (!publicUrl) {
+        setUploadError('Upload succeeded but could not get public URL.')
+        return
+      }
+
+      // ── 3. Insert row in list_photos table ────────────────────────────────
+      const { error: dbErr } = await supabase.from('list_photos').insert({
         list_id:    listId,
         url:        publicUrl,
         path:       filePath,
-        created_by: currentUser?.id,
+        created_by: currentUser?.id ?? null,
       })
-      // Refetch to get the new row with its id
-      const { data } = await supabase
+      if (dbErr) {
+        console.error('[ListPage] list_photos insert error:', dbErr)
+        setUploadError(`DB insert failed: ${dbErr.message}`)
+        return
+      }
+
+      // ── 4. Refetch list_photos to sync state ──────────────────────────────
+      const { data: fresh } = await supabase
         .from('list_photos')
         .select('*')
         .eq('list_id', listId)
         .order('created_at', { ascending: false })
-      setPhotos(data ?? [])
+      setPhotos(fresh ?? [])
+    } catch (err) {
+      console.error('[ListPage] unexpected upload error:', err)
+      setUploadError(err.message ?? 'Unexpected upload error')
     } finally {
       setUploadingPhoto(false)
+      // Reset the file input so the same file can be re-selected
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  // Trigger the file picker — works on iOS Safari when called from a user gesture
+  function triggerFilePicker() {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''   // ensure onChange fires even for same file
+      fileInputRef.current.click()
     }
   }
 
@@ -321,23 +381,41 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-sage-400 uppercase tracking-widest">Photos</p>
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={triggerFilePicker}
               disabled={uploadingPhoto}
               className="flex items-center gap-1.5 text-xs text-sage-500 hover:text-sage-700 border border-sage-200 rounded-lg px-2.5 py-1 transition-colors disabled:opacity-50"
             >
               <Image size={12} />
               {uploadingPhoto ? 'Uploading…' : 'Add Photo'}
             </button>
-            <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,image/*" className="hidden" onChange={handlePhotoUpload} />
+            {/* Use label-wrapping pattern for maximum iOS Safari compatibility */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoUpload}
+            />
           </div>
+
+          {/* Upload error feedback */}
+          {uploadError && (
+            <div className="mb-3 flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              <p className="text-xs text-red-600 flex-1">{uploadError}</p>
+              <button onClick={() => setUploadError('')} className="text-red-300 hover:text-red-500 shrink-0">
+                <XIcon size={12} />
+              </button>
+            </div>
+          )}
 
           {photos.length === 0 ? (
             <div
-              onClick={() => fileInputRef.current?.click()}
+              onClick={triggerFilePicker}
               className="border-2 border-dashed border-sage-200 rounded-xl p-8 text-center cursor-pointer hover:border-sage-300 transition-colors"
             >
               <Image size={24} className="text-sage-300 mx-auto mb-2" />
               <p className="text-xs text-sage-400">Click to upload photos</p>
+              <p className="text-xs text-sage-300 mt-1">JPG, PNG, HEIC up to 10 MB</p>
             </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -357,7 +435,7 @@ export default function ListPage({ listId, listName, listIcon, listColor = '#4a7
                 </div>
               ))}
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={triggerFilePicker}
                 disabled={uploadingPhoto}
                 className="aspect-square rounded-xl border-2 border-dashed border-sage-200 flex flex-col items-center justify-center hover:border-sage-300 transition-colors disabled:opacity-50"
               >

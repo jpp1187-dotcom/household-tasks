@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { X, Plus, Search, Edit2, Clock, Users, Upload, Loader } from 'lucide-react'
+import { X, Plus, Search, Edit2, Clock, Users, Upload, Loader, Globe } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import RecipeSearchModal from './RecipeSearchModal'
 
 const TAG_EMOJI = {
   pasta: '🍝', salad: '🥗', dessert: '🍰', breakfast: '🍳',
@@ -308,6 +309,7 @@ export default function RecipesPage() {
   const [selected,    setSelected]    = useState(null)  // recipe to view
   const [editing,     setEditing]     = useState(null)  // recipe to edit (or 'new')
   const [showForm,    setShowForm]    = useState(false)
+  const [showSearch,  setShowSearch]  = useState(false)
 
   const fetchRecipes = useCallback(async () => {
     setLoading(true)
@@ -348,12 +350,21 @@ export default function RecipesPage() {
       <div className="sticky top-0 bg-sage-50 z-10 px-4 md:px-8 pt-6 pb-4 border-b border-sage-100">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display text-2xl text-sage-800">🍳 Recipes</h2>
-          <button
-            onClick={() => { setEditing(null); setShowForm(true) }}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-sage-600 text-white rounded-xl hover:bg-sage-700 transition-colors"
-          >
-            <Plus size={15} /> Add Recipe
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSearch(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-sage-700 border border-sage-200 rounded-xl hover:bg-sage-50 transition-colors"
+              title="Search & import from the web"
+            >
+              <Globe size={14} /> Search Web
+            </button>
+            <button
+              onClick={() => { setEditing(null); setShowForm(true) }}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-sage-600 text-white rounded-xl hover:bg-sage-700 transition-colors"
+            >
+              <Plus size={15} /> Add Recipe
+            </button>
+          </div>
         </div>
         {/* Search */}
         <div className="relative mb-3">
@@ -412,6 +423,14 @@ export default function RecipesPage() {
           recipe={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
           onSaved={() => { setShowForm(false); setEditing(null); fetchRecipes() }}
+        />
+      )}
+
+      {/* Search & Import modal */}
+      {showSearch && (
+        <RecipeSearchModal
+          onClose={() => setShowSearch(false)}
+          onImported={() => fetchRecipes()}
         />
       )}
     </div>
