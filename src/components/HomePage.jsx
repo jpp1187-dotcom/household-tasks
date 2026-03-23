@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTasks } from '../contexts/TaskContext'
 import { supabase } from '../lib/supabase'
 import AgendaCard from './AgendaCard'
+import GmailCard from './GmailCard'
 
 const TIMEZONES = [
   'America/New_York', 'America/Chicago', 'America/Denver',
@@ -488,9 +489,10 @@ export default function HomePage({ navigate }) {
 
       </div>
 
-      {/* ── Google Agenda ── */}
-      <div className="mt-6">
+      {/* ── Google Workspace cards (Agenda + Gmail) ── */}
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AgendaCard navigate={navigate} />
+        <GmailCard />
       </div>
 
       {/* Timezone modal */}

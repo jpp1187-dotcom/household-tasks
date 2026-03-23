@@ -1,18 +1,31 @@
 /**
  * googleAuth.js — Google Workspace token management + API helpers
  *
- * Token flow:
- *   1. User clicks "Connect Google" in AgendaCard → Google OAuth popup
- *   2. @react-oauth/google returns access_token + expires_in
+ * Token flow (preferred — Supabase-native):
+ *   1. User clicks "Continue with Google" on LoginPage
+ *   2. supabase.auth.signInWithOAuth redirects to Google consent screen
+ *   3. Google redirects back to Supabase callback, then back to the app
+ *   4. onAuthStateChange fires with session.provider_token (Google access token)
+ *   5. AuthContext calls writeToken() to cache in localStorage
+ *   6. Any component calls getProviderToken() — checks session first, then cache
+ *
+ * Token flow (fallback — @react-oauth/google popup):
+ *   1. User clicks "Connect Google" in AgendaCard (for email/password users)
+ *   2. @react-oauth/google popup returns access_token + expires_in
  *   3. writeToken() stores both in localStorage
- *   4. Any component calls readToken() to get a valid token
- *   5. Token used for Calendar (read-only) + Docs (create/write)
+ *   4. getProviderToken() returns the cached token
  *
  * Required env:  VITE_GOOGLE_CLIENT_ID
- * Required OAuth scopes (requested by AgendaCard):
+ * Redirect URI (must be in Google Cloud Console + Supabase auth settings):
+ *   https://dhwcawykduzxtohollmx.supabase.co/auth/v1/callback
+ *
+ * Required OAuth scopes:
  *   https://www.googleapis.com/auth/calendar.readonly
  *   https://www.googleapis.com/auth/documents
+ *   https://www.googleapis.com/auth/gmail.readonly
  */
+
+import { supabase } from './supabase'
 
 const TOKEN_KEY  = 'gormbase_google_token'
 const EXPIRY_KEY = 'gormbase_google_expiry'
@@ -40,6 +53,25 @@ export function clearToken() {
 
 export function isConnected() {
   return readToken() !== null
+}
+
+/**
+ * getProviderToken — returns a valid Google access token.
+ * Checks the live Supabase session for a provider_token first;
+ * if the session doesn't have one, falls back to the localStorage cache.
+ */
+export async function getProviderToken() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.provider_token) {
+      // Keep the localStorage cache in sync so popup-based code works too
+      writeToken(session.provider_token, session.expires_in ?? 3600)
+      return session.provider_token
+    }
+  } catch (e) {
+    console.warn('[googleAuth] getProviderToken: session check failed', e)
+  }
+  return readToken()
 }
 
 // ── Google Docs API ────────────────────────────────────────────────────────────
@@ -150,6 +182,82 @@ export async function fetchUpcomingEvents(accessToken, days = 7, maxResults = 8)
 
   const data = await res.json()
   return data.items ?? []
+}
+
+// ── Gmail API ─────────────────────────────────────────────────────────────────
+
+/**
+ * fetchGmailUnreadCount — returns the number of unread messages in INBOX.
+ *
+ * @param {string} accessToken
+ * @returns {Promise<number>}
+ */
+export async function fetchGmailUnreadCount(accessToken) {
+  if (!accessToken) return 0
+
+  const res = await fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX',
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  )
+
+  if (res.status === 401) {
+    clearToken()
+    throw new Error('Google session expired')
+  }
+  if (!res.ok) throw new Error(`Gmail API ${res.status}`)
+
+  const data = await res.json()
+  return data.messagesUnread ?? 0
+}
+
+/**
+ * fetchGmailMessages — returns recent INBOX messages with subject + sender.
+ *
+ * @param {string} accessToken
+ * @param {number} maxResults  Max messages to return (default 5)
+ * @returns {Promise<Array<{id, subject, from, snippet, isUnread}>>}
+ */
+export async function fetchGmailMessages(accessToken, maxResults = 5) {
+  if (!accessToken) return []
+
+  // Step 1 — list message IDs from INBOX
+  const listRes = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=${maxResults}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  )
+
+  if (listRes.status === 401) {
+    clearToken()
+    throw new Error('Google session expired')
+  }
+  if (!listRes.ok) throw new Error(`Gmail API ${listRes.status}`)
+
+  const listData = await listRes.json()
+  const ids = (listData.messages ?? []).map(m => m.id)
+  if (!ids.length) return []
+
+  // Step 2 — fetch metadata (Subject + From) for each message in parallel
+  const messages = await Promise.all(
+    ids.map(id =>
+      fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}` +
+        `?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      ).then(r => r.ok ? r.json() : null).catch(() => null)
+    )
+  )
+
+  return messages.filter(Boolean).map(msg => {
+    const headers = msg.payload?.headers ?? []
+    const get = name => headers.find(h => h.name === name)?.value ?? ''
+    return {
+      id:       msg.id,
+      subject:  get('Subject') || '(no subject)',
+      from:     get('From'),
+      snippet:  msg.snippet ?? '',
+      isUnread: (msg.labelIds ?? []).includes('UNREAD'),
+    }
+  })
 }
 
 // ── Legacy stubs (kept for backward compat with CalendarPage) ─────────────────

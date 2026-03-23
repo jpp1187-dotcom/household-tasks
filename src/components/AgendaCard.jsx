@@ -1,30 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Calendar, RefreshCw, ExternalLink, Loader, LogOut } from 'lucide-react'
 import { useGoogleLogin } from '@react-oauth/google'
-
-// ── Token storage helpers ────────────────────────────────────────────────────
-const TOKEN_KEY  = 'gormbase_google_token'
-const EXPIRY_KEY = 'gormbase_google_expiry'
-
-function readToken() {
-  const expiry = localStorage.getItem(EXPIRY_KEY)
-  if (expiry && Date.now() > parseInt(expiry, 10)) {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(EXPIRY_KEY)
-    return null
-  }
-  return localStorage.getItem(TOKEN_KEY)
-}
-
-function writeToken(token, expiresIn = 3600) {
-  localStorage.setItem(TOKEN_KEY, token)
-  localStorage.setItem(EXPIRY_KEY, String(Date.now() + expiresIn * 1000))
-}
-
-function clearToken() {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(EXPIRY_KEY)
-}
+import { getProviderToken, writeToken, clearToken } from '../lib/googleAuth'
 
 // ── Event date formatter ─────────────────────────────────────────────────────
 function fmtEvent(event) {
@@ -55,18 +32,31 @@ function GCalIcon({ size = 14 }) {
 // ── Main component ────────────────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
+// Calendar + Docs + Gmail — all three scopes requested up front so the popup
+// also covers GmailCard and SharedNotes export without a second consent screen.
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/documents',
+  'https://www.googleapis.com/auth/gmail.readonly',
 ].join(' ')
 
 export default function AgendaCard({ navigate }) {
-  const [token,   setToken]   = useState(() => readToken())
-  const [events,  setEvents]  = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
+  const [token,        setToken]        = useState(null)
+  const [tokenChecked, setTokenChecked] = useState(false)
+  const [events,       setEvents]       = useState([])
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState('')
 
-  // Google OAuth login — requests Calendar + Docs scopes in one shot
+  // On mount: check Supabase session first, then fall back to localStorage cache
+  useEffect(() => {
+    getProviderToken().then(t => {
+      setToken(t ?? null)
+      setTokenChecked(true)
+    })
+  }, [])
+
+  // Google OAuth popup — fallback for email/password users who haven't
+  // signed in with Google. Requests all three scopes in one shot.
   const loginGoogle = useGoogleLogin({
     scope: SCOPES,
     onSuccess: (res) => {
@@ -148,6 +138,9 @@ export default function AgendaCard({ navigate }) {
     )
   }
 
+  // While resolving the token from session/localStorage, show nothing (avoid flash)
+  if (!tokenChecked) return null
+
   // ── Not connected ────────────────────────────────────────────────────────────
   if (!token) {
     return (
@@ -171,7 +164,7 @@ export default function AgendaCard({ navigate }) {
             <GCalIcon size={16} />
             Connect Google
           </button>
-          <p className="text-xs text-sage-300">Also enables "Send to Google Docs" in Shared Notes</p>
+          <p className="text-xs text-sage-300">Also enables Gmail preview and "Send to Google Docs"</p>
         </div>
       </div>
     )

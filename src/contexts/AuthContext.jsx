@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { writeToken } from '../lib/googleAuth'
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 // Exposes:
@@ -38,11 +39,19 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // Cache the Google provider token whenever the session has one
+      if (session?.provider_token) {
+        writeToken(session.provider_token, session.expires_in ?? 3600)
+      }
       if (session?.user) loadProfile(session.user)
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Cache the Google provider token on every auth state change
+      if (session?.provider_token) {
+        writeToken(session.provider_token, session.expires_in ?? 3600)
+      }
       if (session?.user) loadProfile(session.user)
       else {
         setCurrentUser(null)
@@ -96,6 +105,34 @@ export function AuthProvider({ children }) {
     if (error) throw error
   }
 
+  /**
+   * signInWithGoogle — initiates Supabase's server-side Google OAuth flow.
+   * The client secret never touches the browser; it lives in Supabase Dashboard
+   * (Authentication → Providers → Google).
+   *
+   * Required redirect URI in Google Cloud Console:
+   *   https://dhwcawykduzxtohollmx.supabase.co/auth/v1/callback
+   *
+   * Required JavaScript origins in Google Cloud Console:
+   *   http://localhost:5173   (dev)
+   *   https://<your-vercel-domain>  (prod)
+   */
+  async function signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: [
+          'https://www.googleapis.com/auth/calendar.readonly',
+          'https://www.googleapis.com/auth/documents',
+          'https://www.googleapis.com/auth/gmail.readonly',
+        ].join(' '),
+        redirectTo: window.location.origin,
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    })
+    if (error) throw error
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
   }
@@ -124,7 +161,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       currentUser, allUsers, loading,
-      signIn, signOut, refreshProfile,
+      signIn, signInWithGoogle, signOut, refreshProfile,
       canEdit, isAdmin, canEditList,
     }}>
       {children}
